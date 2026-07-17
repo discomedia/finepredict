@@ -1,0 +1,16 @@
+{
+  "name": "@finepredict/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/content.ts --bundle --format=iife --target=chrome120 --outfile=dist/content.js && cp manifest.json dist/manifest.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

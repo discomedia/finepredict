@@ -2,18 +2,15 @@ import { describe, expect, it } from "vitest";
 import request from "supertest";
 
 import { createApp } from "./app.js";
-import type { AppConfig } from "./config.js";
+import { loadConfig } from "./config.js";
 import { MemoryReportStore } from "./database/store.js";
 
 /** Integration-test runtime configuration. */
-const TEST_CONFIG: AppConfig = {
-  adminApiKey: "integration-admin-key",
-  databaseUrl: null,
-  defaultModel: "gpt-5.6-luna",
-  openAiApiKey: null,
-  port: 3001,
-  webOrigin: "http://localhost:5173",
-};
+const TEST_CONFIG = loadConfig({
+  ADMIN_API_KEY: "integration-admin-key",
+  PORT: "3001",
+  WEB_ORIGIN: "http://localhost:5173",
+});
 
 /**
  * Creates a deterministic public-API fetch fake for a Polymarket event.

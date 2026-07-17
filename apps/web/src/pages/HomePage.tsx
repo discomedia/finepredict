@@ -1,13 +1,17 @@
 import { ArrowRight, Link2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { createReport, listRecentReports, type RecentReport } from "../api.js";
 
 /** FinePredict home page with primary market-analysis workflow. */
 export function HomePage() {
   const navigate = useNavigate();
-  const [urls, setUrls] = useState(["", ""]);
+  const location = useLocation();
+  const [urls, setUrls] = useState(() => [
+    new URLSearchParams(location.search).get("marketUrl") ?? "",
+    "",
+  ]);
   const [compareMode, setCompareMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);

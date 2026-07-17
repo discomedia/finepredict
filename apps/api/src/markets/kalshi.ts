@@ -20,6 +20,8 @@ const KalshiMarketSchema = z.object({
   close_time: z.string().nullish(),
   expected_expiration_time: z.string().nullish(),
   status: z.string().nullish(),
+  result: z.string().nullish(),
+  settlement_ts: z.string().nullish(),
 });
 
 /** Kalshi single-market API response. */
@@ -132,9 +134,12 @@ function normalizeKalshiMarket(
     fetchedAt: new Date().toISOString(),
     platform: "kalshi",
     resolutionSource: extractNamedResolutionSource(rulesText),
+    result: market.result?.trim() || null,
     rulesText,
+    settlementTimestamp: toIsoDate(market.settlement_ts),
     startDate: toIsoDate(market.open_time),
     status: market.status?.trim() || "unknown",
+    disputeState: isKalshiDisputeState(market.status) ? market.status : null,
     title,
     url: marketUrl,
   });
@@ -175,9 +180,14 @@ function normalizeKalshiEvent(
     fetchedAt: new Date().toISOString(),
     platform: "kalshi",
     resolutionSource: extractNamedResolutionSource(rulesText),
+    result: firstMarket.result?.trim() || null,
     rulesText,
+    settlementTimestamp: toIsoDate(firstMarket.settlement_ts),
     startDate: toIsoDate(firstMarket.open_time),
     status: firstMarket.status?.trim() || "unknown",
+    disputeState: isKalshiDisputeState(firstMarket.status)
+      ? firstMarket.status
+      : null,
     title: title.trim(),
     url: marketUrl,
   });
@@ -214,4 +224,14 @@ function toIsoDate(value: string | null | undefined): string | null {
   }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+/**
+ * Identifies official Kalshi lifecycle values that represent a dispute change.
+ *
+ * @param status - Raw Kalshi lifecycle status.
+ * @returns True for disputed and amended states.
+ */
+function isKalshiDisputeState(status: string | null | undefined): boolean {
+  return status === "disputed" || status === "amended";
 }

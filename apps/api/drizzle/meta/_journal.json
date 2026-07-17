@@ -8,6 +8,27 @@
       "when": 1784248835585,
       "tag": "0000_loose_titanium_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784255446216,
+      "tag": "0001_harsh_kronos",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784256057945,
+      "tag": "0002_kind_magik",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784256209282,
+      "tag": "0003_nervous_joshua_kane",
+      "breakpoints": true
     }
   ]
 }

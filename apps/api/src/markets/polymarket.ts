@@ -19,6 +19,11 @@ const PolymarketMarketSchema = z.object({
   endDate: z.string().nullish(),
   active: z.boolean().nullish(),
   closed: z.boolean().nullish(),
+  umaResolutionStatus: z.string().nullish(),
+  resolutionStatus: z.string().nullish(),
+  resolvedAt: z.string().nullish(),
+  questionID: z.string().nullish(),
+  createdBy: z.string().nullish(),
 });
 
 /** Polymarket event fields used by FinePredict. */
@@ -32,6 +37,11 @@ const PolymarketEventSchema = z.object({
   endDate: z.string().nullish(),
   active: z.boolean().nullish(),
   closed: z.boolean().nullish(),
+  umaResolutionStatus: z.string().nullish(),
+  resolutionStatus: z.string().nullish(),
+  resolvedAt: z.string().nullish(),
+  questionID: z.string().nullish(),
+  createdBy: z.string().nullish(),
   markets: z.array(PolymarketMarketSchema).nullish(),
 });
 
@@ -123,12 +133,22 @@ function normalizePolymarketMarket(
     externalId: market.id,
     fetchedAt: new Date().toISOString(),
     platform: "polymarket",
+    platformCreatorAddress: market.createdBy?.trim() || null,
+    platformQuestionId: market.questionID?.trim() || null,
     resolutionSource:
       market.resolutionSource?.trim() ||
       extractNamedResolutionSource(rulesText),
+    result: null,
     rulesText,
+    settlementTimestamp: toIsoDate(market.resolvedAt),
     startDate: toIsoDate(market.startDate),
-    status: market.closed ? "closed" : market.active ? "active" : "inactive",
+    status:
+      market.umaResolutionStatus?.trim() ||
+      market.resolutionStatus?.trim() ||
+      (market.closed ? "closed" : market.active ? "active" : "inactive"),
+    disputeState: polymarketDisputeState(
+      market.umaResolutionStatus ?? market.resolutionStatus,
+    ),
     title,
     url: marketUrl,
   });
@@ -163,14 +183,30 @@ function normalizePolymarketEvent(
     externalId: event.id,
     fetchedAt: new Date().toISOString(),
     platform: "polymarket",
+    platformCreatorAddress:
+      event.createdBy?.trim() ||
+      event.markets?.find((market) => market.createdBy?.trim())?.createdBy ||
+      null,
+    platformQuestionId:
+      event.questionID?.trim() ||
+      event.markets?.find((market) => market.questionID?.trim())?.questionID ||
+      null,
     resolutionSource:
       event.resolutionSource?.trim() ||
       event.markets?.find((market) => market.resolutionSource?.trim())
         ?.resolutionSource ||
       extractNamedResolutionSource(rulesText),
+    result: null,
     rulesText,
+    settlementTimestamp: toIsoDate(event.resolvedAt),
     startDate: toIsoDate(event.startDate),
-    status: event.closed ? "closed" : event.active ? "active" : "inactive",
+    status:
+      event.umaResolutionStatus?.trim() ||
+      event.resolutionStatus?.trim() ||
+      (event.closed ? "closed" : event.active ? "active" : "inactive"),
+    disputeState: polymarketDisputeState(
+      event.umaResolutionStatus ?? event.resolutionStatus,
+    ),
     title,
     url: marketUrl,
   });
@@ -188,4 +224,22 @@ function toIsoDate(value: string | null | undefined): string | null {
   }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+/**
+ * Preserves Polymarket UMA proposal states relevant to dispute monitoring.
+ *
+ * @param state - Raw Gamma/UMA resolution state.
+ * @returns Raw dispute state or null for ordinary lifecycle values.
+ */
+function polymarketDisputeState(
+  state: string | null | undefined,
+): string | null {
+  const normalized = state?.trim().toLowerCase();
+  return normalized &&
+    ["proposed", "challenged", "disputed", "dvm", "clarified"].includes(
+      normalized,
+    )
+    ? state?.trim() || null
+    : null;
 }

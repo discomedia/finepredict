@@ -1,5 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
-
 import {
   CreateReportRequestSchema,
   FinePredictModelSchema,
@@ -10,16 +8,29 @@ import express, { type Express, type Request, type Response } from "express";
 import { ZodError } from "zod";
 
 import type { AppConfig } from "./config.js";
+import type { AuthRuntime } from "./auth.js";
+import {
+  ProductAccessError,
+  type ProductStore,
+} from "./database/product-store.js";
 import type { ReportStore } from "./database/store.js";
+import { createDeveloperApiRouter } from "./developer-api/router.js";
 import { DETERMINISTIC_CHECK_COUNT } from "./analysis/deterministic-checks.js";
+import { createOpenApiDocument } from "./developer-api/openapi.js";
+import { createProductRouter } from "./http/product-routes.js";
+import { isAdministratorRequest } from "./http/auth-middleware.js";
+import type { BillingService } from "./integrations/billing.js";
 import { log } from "./log.js";
 import { UnsupportedMarketUrlError } from "./markets/platform.js";
 import { ReportService } from "./report-service.js";
 
 /** Dependencies used to construct the HTTP application. */
 export interface CreateAppDependencies {
+  authRuntime?: AuthRuntime | null;
+  billingService?: BillingService;
   config: AppConfig;
   fetchImplementation?: typeof fetch;
+  productStore?: ProductStore;
   store: ReportStore;
 }
 
@@ -35,10 +46,63 @@ export function createApp(dependencies: CreateAppDependencies): Express {
   app.disable("x-powered-by");
   app.use(
     cors({
+      credentials: true,
       origin: dependencies.config.webOrigin
         .split(",")
         .map((origin) => origin.trim()),
     }),
+  );
+
+  if (dependencies.authRuntime) {
+    app.all("/api/auth/*splat", dependencies.authRuntime.handler);
+  } else {
+    app.all("/api/auth/*splat", (_request, response) => {
+      response.status(503).json({
+        error: `Account access is not configured on this deployment.`,
+      });
+    });
+  }
+
+  app.post(
+    "/api/billing/webhook",
+    express.raw({ type: "application/json", limit: "256kb" }),
+    async (request, response, next) => {
+      const billingService = dependencies.billingService;
+      const productStore = dependencies.productStore;
+      if (!billingService || !productStore) {
+        response.status(503).json({ error: `Billing is not configured.` });
+        return;
+      }
+      let eventId: string | null = null;
+      try {
+        const signature = request.header("stripe-signature") ?? "";
+        const body = Buffer.isBuffer(request.body)
+          ? request.body
+          : Buffer.from("");
+        const event = billingService.constructWebhookEvent(body, signature);
+        eventId = event.id;
+        const claimed = await productStore.claimStripeWebhook(
+          event.id,
+          event.type,
+        );
+        if (!claimed) {
+          response.json({ received: true, duplicate: true });
+          return;
+        }
+        const update = billingService.extractSubscriptionUpdate(event);
+        if (update) {
+          await productStore.applyStripeSubscriptionUpdate(update);
+        }
+        response.json({ received: true });
+      } catch (error) {
+        if (eventId) {
+          await productStore
+            .releaseStripeWebhook(eventId)
+            .catch(() => undefined);
+        }
+        next(error);
+      }
+    },
   );
   app.use(express.json({ limit: "64kb" }));
 
@@ -50,7 +114,13 @@ export function createApp(dependencies: CreateAppDependencies): Express {
     response.json({
       deterministicCheckCount: DETERMINISTIC_CHECK_COUNT,
       platforms: ["polymarket", "kalshi"],
+      accountFeaturesConfigured: Boolean(dependencies.authRuntime),
+      billingConfigured: dependencies.billingService?.configured ?? false,
     });
+  });
+
+  app.get("/api/openapi.json", (_request, response) => {
+    response.json(createOpenApiDocument(dependencies.config.authUrl));
   });
 
   app.get("/api/reports", async (_request, response, next) => {
@@ -85,6 +155,43 @@ export function createApp(dependencies: CreateAppDependencies): Express {
     }
   });
 
+  app.get(
+    "/api/reports/:slug/related-disputes",
+    async (request, response, next) => {
+      try {
+        if (!dependencies.productStore) {
+          response.json({ disputes: [] });
+          return;
+        }
+        const report = await reportService.getReport(
+          String(request.params.slug),
+        );
+        if (!report) {
+          response.status(404).json({ error: "Report not found." });
+          return;
+        }
+        const checkIds = [
+          ...new Set(
+            report.markets.flatMap((market) =>
+              market.findings.map((finding) => finding.checkId),
+            ),
+          ),
+        ];
+        const wordingTags = extractReportWordingTags(
+          report.markets.map((market) => market.contract.rulesText).join("\n"),
+        );
+        response.json({
+          disputes: await dependencies.productStore.findRelatedDisputes(
+            checkIds,
+            wordingTags,
+          ),
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   app.get("/api/settings", async (_request, response, next) => {
     try {
       const model = await dependencies.store.getSettingsModel(
@@ -101,8 +208,14 @@ export function createApp(dependencies: CreateAppDependencies): Express {
 
   app.put("/api/settings", async (request, response, next) => {
     try {
-      if (!isAdminRequest(request, dependencies.config.adminApiKey)) {
-        response.status(403).json({ error: "Administrator key required." });
+      if (
+        !(await isAdministratorRequest(
+          request,
+          dependencies.authRuntime,
+          dependencies.config.adminApiKey,
+        ))
+      ) {
+        response.status(403).json({ error: "Administrator access required." });
         return;
       }
       const input = UpdateSettingsRequestSchema.parse(request.body);
@@ -115,6 +228,34 @@ export function createApp(dependencies: CreateAppDependencies): Express {
       next(error);
     }
   });
+
+  if (dependencies.productStore && dependencies.billingService) {
+    app.use(
+      "/api",
+      createProductRouter({
+        ...(dependencies.authRuntime === undefined
+          ? {}
+          : { authRuntime: dependencies.authRuntime }),
+        billingService: dependencies.billingService,
+        config: dependencies.config,
+        ...(dependencies.fetchImplementation
+          ? { fetchImplementation: dependencies.fetchImplementation }
+          : {}),
+        productStore: dependencies.productStore,
+      }),
+    );
+    app.use(
+      "/api/v1",
+      createDeveloperApiRouter({
+        config: dependencies.config,
+        ...(dependencies.fetchImplementation
+          ? { fetchImplementation: dependencies.fetchImplementation }
+          : {}),
+        productStore: dependencies.productStore,
+        reportStore: dependencies.store,
+      }),
+    );
+  }
 
   app.use(
     (
@@ -134,6 +275,10 @@ export function createApp(dependencies: CreateAppDependencies): Express {
         response.status(400).json({ error: error.message });
         return;
       }
+      if (error instanceof ProductAccessError) {
+        response.status(error.status).json({ error: error.message });
+        return;
+      }
       log("api.errorHandler", "Unhandled API error.", {
         error: error instanceof Error ? error.message : String(error),
       });
@@ -149,16 +294,23 @@ export function createApp(dependencies: CreateAppDependencies): Express {
 }
 
 /**
- * Performs a constant-time comparison of the supplied and configured admin key.
+ * Extracts deterministic settlement-wording tags used for historical matching.
  *
- * @param request - Incoming Express request.
- * @param expectedKey - Server-only administrator key.
- * @returns True only for a valid administrator request.
+ * @param rulesText - Combined report rules text.
+ * @returns Normalized terms actually present in the report.
  */
-function isAdminRequest(request: Request, expectedKey: string): boolean {
-  const suppliedKey = request.header("x-admin-api-key") ?? "";
-  if (!expectedKey || suppliedKey.length !== expectedKey.length) {
-    return false;
-  }
-  return timingSafeEqual(Buffer.from(suppliedKey), Buffer.from(expectedKey));
+function extractReportWordingTags(rulesText: string): string[] {
+  const normalized = rulesText.toLowerCase();
+  return [
+    "announcement",
+    "before",
+    "consensus",
+    "deadline",
+    "fallback",
+    "launch",
+    "official",
+    "postponement",
+    "revision",
+    "source",
+  ].filter((term) => normalized.includes(term));
 }

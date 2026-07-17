@@ -6,6 +6,14 @@
   NODE_VERSION = "24"
   PNPM_VERSION = "10.34.4"
 
+[[edge_functions]]
+  function = "report-meta"
+  path = "/reports/*"
+
+[[edge_functions]]
+  function = "report-meta"
+  path = "/disputes/*"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

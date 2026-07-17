@@ -1,5 +1,11 @@
-import type { AnalysedMarket, FinePredictReport } from "@finepredict/shared";
+import type {
+  AnalysedMarket,
+  DisputeCase,
+  FinePredictReport,
+  MarketObservation,
+} from "@finepredict/shared";
 import {
+  Activity,
   ArrowLeft,
   CalendarClock,
   Check,
@@ -12,7 +18,7 @@ import {
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { getReport } from "../api.js";
+import { getMarketStatus, getRelatedDisputes, getReport } from "../api.js";
 import { ComparisonTable } from "../components/ComparisonTable.js";
 import { Countdown } from "../components/Countdown.js";
 import { FindingCard } from "../components/FindingCard.js";
@@ -23,6 +29,10 @@ export function ReportPage() {
   const [report, setReport] = useState<FinePredictReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [marketStatuses, setMarketStatuses] = useState<
+    Record<string, MarketObservation | null>
+  >({});
+  const [relatedDisputes, setRelatedDisputes] = useState<DisputeCase[]>([]);
 
   useEffect(() => {
     if (!slug) {
@@ -39,6 +49,24 @@ export function ReportPage() {
         ),
       );
   }, [slug]);
+
+  useEffect(() => {
+    if (!report || !slug) return;
+    void Promise.all(
+      report.markets.map(async (market) => {
+        const observation = await getMarketStatus(
+          market.contract.platform,
+          market.contract.externalId,
+        );
+        return [marketKey(market), observation] as const;
+      }),
+    )
+      .then((entries) => setMarketStatuses(Object.fromEntries(entries)))
+      .catch(() => setMarketStatuses({}));
+    void getRelatedDisputes(slug)
+      .then(setRelatedDisputes)
+      .catch(() => setRelatedDisputes([]));
+  }, [report, slug]);
 
   /**
    * Copies the canonical report URL to the clipboard.
@@ -134,6 +162,11 @@ export function ReportPage() {
         />
       ) : null}
 
+      <MonitoringStatusSection
+        markets={report.markets}
+        statuses={marketStatuses}
+      />
+
       {report.markets.map((market) => (
         <section
           className="report-section findings-section"
@@ -170,6 +203,8 @@ export function ReportPage() {
         </section>
       ))}
 
+      <RelatedDisputesSection disputes={relatedDisputes} />
+
       {report.markets.map((market) => (
         <SnapshotHistory
           key={`snapshots:${market.contract.externalId}`}
@@ -184,6 +219,170 @@ export function ReportPage() {
       </aside>
     </div>
   );
+}
+
+/** Properties for latest market-monitoring states. */
+interface MonitoringStatusSectionProps {
+  markets: AnalysedMarket[];
+  statuses: Record<string, MarketObservation | null>;
+}
+
+/**
+ * Renders the latest normalized monitoring state for each report market.
+ *
+ * @param props - Report markets and keyed monitoring observations.
+ * @returns Latest monitoring status panel.
+ */
+function MonitoringStatusSection({
+  markets,
+  statuses,
+}: MonitoringStatusSectionProps) {
+  return (
+    <section className="report-section monitoring-section">
+      <div className="section-title-row">
+        <div>
+          <span className="report-kicker">Live monitoring</span>
+          <h2>Latest market status</h2>
+        </div>
+        <Activity size={18} />
+      </div>
+      <p className="section-intro">
+        Latest normalized platform observation. Archived report wording remains
+        unchanged.
+      </p>
+      <div className="monitoring-grid">
+        {markets.map((market) => {
+          const observation = statuses[marketKey(market)];
+          return (
+            <article className="monitoring-card" key={marketKey(market)}>
+              <div className="monitoring-card-title">
+                <span
+                  className={`platform-badge platform-${market.contract.platform}`}
+                >
+                  {capitalize(market.contract.platform)}
+                </span>
+                <strong>{market.contract.title}</strong>
+              </div>
+              {observation ? (
+                <dl className="monitoring-facts">
+                  <div>
+                    <dt>Lifecycle</dt>
+                    <dd>{formatMachineLabel(observation.normalizedState)}</dd>
+                  </div>
+                  <div>
+                    <dt>Platform state</dt>
+                    <dd>{observation.rawPlatformState}</dd>
+                  </div>
+                  <div>
+                    <dt>Observed</dt>
+                    <dd>{formatDateTime(observation.observedAt)}</dd>
+                  </div>
+                  <div>
+                    <dt>Source</dt>
+                    <dd>
+                      {formatSourceAvailability(observation.sourceAvailability)}
+                    </dd>
+                  </div>
+                  {observation.result ? (
+                    <div>
+                      <dt>Result</dt>
+                      <dd>{observation.result}</dd>
+                    </div>
+                  ) : null}
+                  {observation.disputeState ? (
+                    <div>
+                      <dt>Dispute</dt>
+                      <dd>{observation.disputeState}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              ) : (
+                <p className="monitoring-empty">
+                  No monitoring observation has been recorded yet.
+                </p>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/** Properties for deterministic historical dispute matches. */
+interface RelatedDisputesSectionProps {
+  disputes: DisputeCase[];
+}
+
+/**
+ * Renders related published disputes and the backend-provided exact reasons.
+ *
+ * @param props - Deterministically related dispute cases.
+ * @returns Historical cases section without a similarity score.
+ */
+function RelatedDisputesSection({ disputes }: RelatedDisputesSectionProps) {
+  return (
+    <section className="report-section related-disputes-section">
+      <div className="section-title-row">
+        <div>
+          <span className="report-kicker">Historical evidence</span>
+          <h2>Related dispute cases</h2>
+        </div>
+        <span className="finding-count">{disputes.length} cases</span>
+      </div>
+      <p className="section-intro">
+        Matches use shared deterministic checks and wording terms. They do not
+        predict whether this market will be disputed.
+      </p>
+      {disputes.length ? (
+        <div className="related-case-list">
+          {disputes.map((dispute) => (
+            <article className="related-case" key={dispute.id}>
+              <div>
+                <span className={`platform-badge platform-${dispute.platform}`}>
+                  {capitalize(dispute.platform)}
+                </span>
+                <h3>
+                  <Link to={`/disputes/${dispute.slug}`}>{dispute.title}</Link>
+                </h3>
+                <blockquote>“{dispute.disputedWording}”</blockquote>
+              </div>
+              <ul>
+                {(dispute.matchReasons ?? []).map((reason) => (
+                  <li key={reason}>{reason}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="no-findings">
+          No published cases share this report’s deterministic checks or wording
+          terms.
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Creates a stable client key for an analyzed market.
+ *
+ * @param market - Analyzed report market.
+ * @returns Platform and external-ID key.
+ */
+function marketKey(market: AnalysedMarket): string {
+  return `${market.contract.platform}:${market.contract.externalId}`;
+}
+
+/**
+ * Formats a normalized machine label for display.
+ *
+ * @param value - Snake-case or lowercase state.
+ * @returns Human-readable state label.
+ */
+function formatMachineLabel(value: string): string {
+  return value.replaceAll("_", " ");
 }
 
 /** Properties for a market overview card. */

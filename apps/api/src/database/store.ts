@@ -20,7 +20,7 @@ export interface SaveSnapshotInput {
   endDate: string | null;
   externalId: string;
   platform: MarketPlatform;
-  reportId: string;
+  reportId: string | null;
   resolutionSource: string | null;
   rulesText: string;
   sourceUrl: string;

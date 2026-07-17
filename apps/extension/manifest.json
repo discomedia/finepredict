@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "FinePredict — Check fine print",
+  "version": "0.1.0",
+  "description": "Open Polymarket and Kalshi contracts in FinePredict for explicit analysis.",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://polymarket.com/*",
+        "https://*.polymarket.com/*",
+        "https://kalshi.com/*",
+        "https://*.kalshi.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
