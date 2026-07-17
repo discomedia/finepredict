@@ -3,9 +3,12 @@ import { z } from "zod";
 
 import {
   extractNamedResolutionSource,
-  extractPathValue,
   UnsupportedMarketUrlError,
 } from "./platform.js";
+
+/** Base URL for Kalshi's public Trade API. */
+const KALSHI_TRADE_API_BASE_URL =
+  "https://external-api.kalshi.com/trade-api/v2";
 
 /** Kalshi market fields used by FinePredict. */
 const KalshiMarketSchema = z.object({
@@ -53,35 +56,71 @@ export async function fetchKalshiContract(
   fetchImplementation: typeof fetch = fetch,
 ): Promise<MarketContract> {
   const url = new URL(marketUrl);
-  const ticker = extractPathValue(url, "markets").toUpperCase();
-  const marketResponse = await fetchKalshiJson(
-    `https://api.elections.kalshi.com/trade-api/v2/markets/${encodeURIComponent(ticker)}`,
-    fetchImplementation,
-  );
-  if (marketResponse !== null) {
-    return normalizeKalshiMarket(
-      KalshiMarketResponseSchema.parse(marketResponse).market,
+  const tickers = extractKalshiTickers(url);
+  for (const ticker of tickers) {
+    const marketResponse = await fetchKalshiJson(
+      `${KALSHI_TRADE_API_BASE_URL}/markets/${encodeURIComponent(ticker)}`,
+      fetchImplementation,
+    );
+    if (marketResponse !== null) {
+      return normalizeKalshiMarket(
+        KalshiMarketResponseSchema.parse(marketResponse).market,
+        marketUrl,
+      );
+    }
+
+    const eventResponse = await fetchKalshiJson(
+      `${KALSHI_TRADE_API_BASE_URL}/events/${encodeURIComponent(ticker)}?with_nested_markets=true`,
+      fetchImplementation,
+    );
+    if (eventResponse === null) {
+      continue;
+    }
+    const parsed = KalshiEventResponseSchema.parse(eventResponse);
+    const markets = parsed.event.markets ?? parsed.markets ?? [];
+    return normalizeKalshiEvent(
+      parsed.event.event_ticker,
+      parsed.event.title ?? parsed.event.sub_title ?? ticker,
+      markets,
       marketUrl,
     );
   }
-
-  const eventResponse = await fetchKalshiJson(
-    `https://api.elections.kalshi.com/trade-api/v2/events/${encodeURIComponent(ticker)}?with_nested_markets=true`,
-    fetchImplementation,
+  throw new UnsupportedMarketUrlError(
+    `Kalshi did not recognize any ticker from this URL: ${tickers.join(", ")}.`,
   );
-  if (eventResponse === null) {
+}
+
+/**
+ * Extracts potential Kalshi API tickers from a public market URL.
+ *
+ * Kalshi's current routes can include a series ticker immediately after
+ * `/markets/` and an event or market ticker as the final path segment.
+ *
+ * @param url - Parsed public Kalshi market URL.
+ * @returns Unique API ticker candidates, with the terminal ticker first.
+ */
+function extractKalshiTickers(url: URL): string[] {
+  const segments = url.pathname.split("/").filter(Boolean);
+  const marketsIndex = segments.findIndex(
+    (segment) => segment.toLowerCase() === "markets",
+  );
+  const pathAfterMarkets = segments.slice(marketsIndex + 1);
+  const tickerCandidates = [
+    pathAfterMarkets.at(-1),
+    pathAfterMarkets[0],
+  ].filter(
+    (segment): segment is string =>
+      typeof segment === "string" && /^kx[\w-]*$/i.test(segment),
+  );
+  const tickers = [
+    ...new Set(tickerCandidates.map((ticker) => ticker.toUpperCase())),
+  ];
+  if (tickers.length === 0) {
     throw new UnsupportedMarketUrlError(
-      `Kalshi did not recognize the ticker ${ticker} from this URL.`,
+      `The Kalshi URL must include a ticker after /markets/.`,
     );
   }
-  const parsed = KalshiEventResponseSchema.parse(eventResponse);
-  const markets = parsed.event.markets ?? parsed.markets ?? [];
-  return normalizeKalshiEvent(
-    parsed.event.event_ticker,
-    parsed.event.title ?? parsed.event.sub_title ?? ticker,
-    markets,
-    marketUrl,
-  );
+  return tickers;
 }
 
 /**
