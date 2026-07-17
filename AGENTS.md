@@ -41,5 +41,6 @@ This file contains important guidelines and conventions for this codebase to fol
 - All OpenAI text calls must use `disco.llm.call` from `@discomedia/utils`. `gpt-5.6-luna` is the cost-safe default. Keep the admin-selectable allowlist in `packages/shared/src/index.ts` synchronized with server validation and the settings dropdown.
 - Deterministic checks must run before the LLM. Never accept or render an LLM conclusion unless its supporting quote is an exact substring of the archived contract text.
 - Railway builds the API using `railway.json`. Its `/api/health/live` probe must remain database-free so idle health checks do not wake Neon.
+- Railway injects the production `PORT` (currently 8080). The generated public domain must target that injected port, not the local-development port 3001; verify with `railway domain status` after creating or changing a domain.
 - Netlify builds the web client using `netlify.toml`. Keep the SPA redirect and set `VITE_API_BASE_URL` to the active Railway domain.
 - Production variables are configured with the Railway and Netlify CLIs; never commit `.env`. GitHub pushes to the default branch should remain the deployment trigger for both services.
