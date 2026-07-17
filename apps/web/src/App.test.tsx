@@ -12,9 +12,12 @@ describe("App", () => {
       </MemoryRouter>,
     );
     expect(
-      screen.getByRole("heading", { name: /the odds look equal/i }),
+      screen.getByRole("heading", { name: /compare the rules/i }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Market URL")).toBeInTheDocument();
-    expect(screen.getByText("No mystery scores")).toBeInTheDocument();
+    expect(screen.getByLabelText("Primary contract")).toBeInTheDocument();
+    expect(screen.getByText("Specific warnings")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/contract intelligence/i),
+    ).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { ArrowUpRight, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import { HomePage } from "./pages/HomePage.js";
@@ -22,6 +22,10 @@ export function App() {
             System
           </Link>
         </nav>
+        <div className="header-market-status" aria-label="Supported markets">
+          <span className="status-light" />
+          Polymarket&nbsp;&nbsp;/&nbsp;&nbsp;Kalshi
+        </div>
       </header>
 
       <main>
@@ -33,19 +37,9 @@ export function App() {
       </main>
 
       <footer className="site-footer">
-        <div>
-          <span className="brand footer-brand">
-            <span className="brand-mark">FP</span>
-            <span>FinePredict</span>
-          </span>
-          <p>Read the contract, not just the odds.</p>
-        </div>
-        <div className="footer-links">
-          <span>Built for careful markets</span>
-          <a href="mailto:hello@finepredict.com">
-            API access <ArrowUpRight size={14} />
-          </a>
-        </div>
+        <span>FinePredict</span>
+        <p>Contract terms are archived at the time of analysis.</p>
+        <a href="mailto:hello@finepredict.com">API access</a>
       </footer>
     </div>
   );

@@ -1,5 +1,5 @@
 import type { FinePredictModel, PublicSettings } from "@finepredict/shared";
-import { Check, KeyRound, LockKeyhole, Save, Sparkles } from "lucide-react";
+import { Check, KeyRound, LockKeyhole, Save } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 
 import { getSettings, updateSettings } from "../api.js";
@@ -63,9 +63,8 @@ export function SettingsPage() {
         </span>
         <h1>System settings</h1>
         <p>
-          Control the model used to explain deterministic contract findings. The
-          administrator key is checked by the API and is never stored in the
-          browser.
+          Select the model used after deterministic contract checks. Changes
+          require the administrator key.
         </p>
       </div>
 
@@ -74,11 +73,8 @@ export function SettingsPage() {
         onSubmit={(event) => void handleSubmit(event)}
       >
         <div className="settings-card-header">
-          <div className="feature-icon">
-            <Sparkles />
-          </div>
           <div>
-            <span>Contract explanation</span>
+            <span>Analysis runtime</span>
             <h2>OpenAI model</h2>
           </div>
         </div>
@@ -98,9 +94,7 @@ export function SettingsPage() {
           )}
         </select>
         <p className="field-help">
-          Luna is the default: it keeps routine report cost low. Deterministic
-          checks always run before the model and remain visible if the API call
-          fails.
+          Luna is the low-cost default. Rule checks run before the model.
         </p>
         <label htmlFor="admin-key">Administrator API key</label>
         <div className="url-input-wrap">

@@ -90,9 +90,9 @@ export function ReportPage() {
 
       <header className="report-header">
         <div className="report-status">
-          <span className="report-kicker">Fine-print report</span>
+          <span className="report-kicker">Contract report</span>
           <span className="archived-pill">
-            <FileArchive size={14} /> Permanently archived
+            <FileArchive size={14} /> Archived
           </span>
         </div>
         <h1>
@@ -108,7 +108,7 @@ export function ReportPage() {
           {report.modelUsed ? (
             <>
               <span>•</span>
-              <span>Explained with {report.modelUsed}</span>
+              <span>{report.modelUsed}</span>
             </>
           ) : null}
         </div>
@@ -142,9 +142,9 @@ export function ReportPage() {
           <div className="section-title-row">
             <div>
               <span className="report-kicker">
-                {capitalize(market.contract.platform)} clarity checks
+                {capitalize(market.contract.platform)} checks
               </span>
-              <h2>Specific wording to review</h2>
+              <h2>Wording to review</h2>
             </div>
             <span className="finding-count">
               {market.findings.length} finding
@@ -152,8 +152,8 @@ export function ReportPage() {
             </span>
           </div>
           <p className="section-intro">
-            No composite risk score. Each conclusion below is tied to an exact
-            excerpt from the archived contract.
+            Each conclusion is tied to an exact excerpt from the archived
+            contract.
           </p>
           {market.findings.length ? (
             <div className="findings-grid">
@@ -163,8 +163,8 @@ export function ReportPage() {
             </div>
           ) : (
             <div className="no-findings">
-              The deterministic checks did not flag specific wording. This is
-              not a guarantee that the contract is dispute-proof.
+              No wording was flagged by the deterministic checks. This is not a
+              guarantee of unambiguous settlement.
             </div>
           )}
         </section>
@@ -231,7 +231,7 @@ function MarketOverview({ label, market }: MarketOverviewProps) {
       <div className="market-card-footer">
         <Countdown endDate={market.contract.endDate} />
         <span className={`source-state source-${market.sourceAvailability}`}>
-          Source: {market.sourceAvailability.replace("_", " ")}
+          {formatSourceAvailability(market.sourceAvailability)}
         </span>
         <a href={market.contract.url} target="_blank" rel="noreferrer">
           Original market <ExternalLink size={14} />
@@ -239,6 +239,25 @@ function MarketOverview({ label, market }: MarketOverviewProps) {
       </div>
     </article>
   );
+}
+
+/**
+ * Converts a stored source-check status into precise, non-alarmist copy.
+ *
+ * @param sourceAvailability - Automated source reachability result.
+ * @returns Human-readable source check label.
+ */
+export function formatSourceAvailability(
+  sourceAvailability: AnalysedMarket["sourceAvailability"],
+): string {
+  const labels: Record<AnalysedMarket["sourceAvailability"], string> = {
+    access_limited: "Source check limited",
+    available: "Source reachable",
+    confirmed_unavailable: "Source unavailable",
+    not_checked: "Source not checked",
+    unavailable: "Source status unconfirmed",
+  };
+  return labels[sourceAvailability];
 }
 
 /** Properties for an archived snapshot history section. */
@@ -259,9 +278,9 @@ function SnapshotHistory({ market }: SnapshotHistoryProps) {
       <div className="section-title-row">
         <div>
           <span className="report-kicker">
-            {capitalize(market.contract.platform)} archive
+            {capitalize(market.contract.platform)} rules
           </span>
-          <h2>Rules snapshot & change history</h2>
+          <h2>Snapshot history</h2>
         </div>
         <span className="snapshot-hash">
           {latest

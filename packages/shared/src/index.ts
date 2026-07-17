@@ -78,13 +78,25 @@ export const MarketSnapshotSchema = z.object({
 /** Immutable market-rules snapshot. */
 export type MarketSnapshot = z.infer<typeof MarketSnapshotSchema>;
 
+/** Reachability result for an automated resolution-source check. */
+export const SourceAvailabilitySchema = z.enum([
+  "available",
+  "confirmed_unavailable",
+  "unavailable",
+  "access_limited",
+  "not_checked",
+]);
+
+/** Automated resolution-source reachability state. */
+export type SourceAvailability = z.infer<typeof SourceAvailabilitySchema>;
+
 /** One market and all analysis rendered in a report. */
 export const AnalysedMarketSchema = z.object({
   contract: MarketContractSchema,
   summary: ContractSummarySchema,
   findings: z.array(ContractFindingSchema),
   snapshots: z.array(MarketSnapshotSchema),
-  sourceAvailability: z.enum(["available", "unavailable", "not_checked"]),
+  sourceAvailability: SourceAvailabilitySchema,
 });
 
 /** Analyzed market including snapshot history and source state. */
