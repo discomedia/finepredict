@@ -51,6 +51,27 @@ function createMetadataDescription(value: string): string {
 }
 
 /**
+ * Creates semantic HTML that is present before the React application loads.
+ *
+ * @param heading - Plain-language question answered by the page.
+ * @param title - Market or dispute title.
+ * @param description - Verifiable contract summary or disputed wording.
+ * @returns A crawler-visible article that React replaces when it mounts.
+ */
+function createPrerenderedArticle(
+  heading: string,
+  title: string,
+  description: string,
+): string {
+  return `<article aria-label="FinePredict contract summary">
+      <p>FinePredict</p>
+      <h1>${escapeHtml(heading)}</h1>
+      <h2>${escapeHtml(title)}</h2>
+      <p>${escapeHtml(description)}</p>
+    </article>`;
+}
+
+/**
  * Creates report-specific HTML metadata.
  *
  * @param report - Public FinePredict report.
@@ -223,20 +244,36 @@ export default async function reportMetadataEdgeFunction(
     const canonicalUrl = `${requestUrl.origin}/${resourceType}/${encodeURIComponent(slug)}`;
     const html = await response.text();
     let metadata: string;
+    let prerenderedArticle: string;
     let title: string;
     if (resourceType === "reports" && isMetadataReport(resource)) {
       metadata = createReportMetadata(resource, canonicalUrl);
       title = resource.markets
         .map((market) => market.contract.title)
         .join(" vs ");
+      prerenderedArticle = createPrerenderedArticle(
+        "What does this market require?",
+        title,
+        resource.markets[0]?.summary.plainEnglish ??
+          "Read the archived contract terms, source and deadline.",
+      );
     } else if (resourceType === "disputes" && isMetadataDispute(resource)) {
       metadata = createDisputeMetadata(resource, canonicalUrl);
       title = `${resource.title} dispute`;
+      prerenderedArticle = createPrerenderedArticle(
+        "What wording was disputed?",
+        resource.title,
+        resource.disputedWording,
+      );
     } else {
       return response;
     }
     const enrichedHtml = html
       .replace(METADATA_BLOCK_PATTERN, metadata)
+      .replace(
+        '<div id="root"></div>',
+        `<div id="root">${prerenderedArticle}</div>`,
+      )
       .replace(
         /<title>[\s\S]*?<\/title>/,
         `<title>${escapeHtml(title)} — FinePredict</title>`,
