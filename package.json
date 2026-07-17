@@ -1,0 +1,27 @@
+{
+  "name": "finepredict",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.34.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm --filter @finepredict/shared build && pnpm --filter @finepredict/api build && pnpm --filter @finepredict/web build",
+    "dev": "concurrently --kill-others-on-fail --names api,web --prefix-colors blue,magenta \"pnpm --filter @finepredict/api dev\" \"pnpm --filter @finepredict/web dev -- --open\"",
+    "dev:api": "pnpm --filter @finepredict/api dev",
+    "dev:web": "pnpm --filter @finepredict/web dev -- --open",
+    "db:generate": "pnpm --filter @finepredict/api db:generate",
+    "db:migrate": "pnpm --filter @finepredict/api db:migrate",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "pnpm --filter @finepredict/shared test && pnpm --filter @finepredict/api test && pnpm --filter @finepredict/web test",
+    "test:integration": "pnpm --filter @finepredict/api test:integration",
+    "typecheck": "pnpm --filter @finepredict/shared build && pnpm --filter @finepredict/api typecheck && pnpm --filter @finepredict/web typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3"
+  }
+}
