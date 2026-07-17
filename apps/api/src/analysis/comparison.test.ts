@@ -45,4 +45,24 @@ describe("compareContracts", () => {
       comparison.rows.find((row) => row.term === "Deadline")?.left,
     ).toContain("5 p.m. ET");
   });
+
+  it("formats metadata deadlines with an Eastern Time abbreviation", () => {
+    const comparison = compareContracts(
+      createContract({
+        endDate: "2026-07-19T14:00:00.000Z",
+        rulesText: "This contract has standard settlement terms.",
+      }),
+      createContract({
+        endDate: "2026-07-19T14:00:00.000Z",
+        externalId: "two",
+        rulesText: "This contract has standard settlement terms.",
+      }),
+    );
+
+    const deadline = comparison.rows.find(
+      (row) => row.term === "Deadline",
+    )?.left;
+    expect(deadline).toContain("Jul 19, 2026");
+    expect(deadline).toContain("EDT");
+  });
 });

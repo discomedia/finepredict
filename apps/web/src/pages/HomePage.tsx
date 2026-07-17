@@ -18,9 +18,21 @@ export function HomePage() {
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
 
   useEffect(() => {
+    let isMounted = true;
     void listRecentReports()
-      .then(setRecentReports)
-      .catch(() => setRecentReports([]));
+      .then((reports) => {
+        if (isMounted) {
+          setRecentReports(reports);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setRecentReports([]);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   /**

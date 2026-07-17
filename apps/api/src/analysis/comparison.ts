@@ -77,10 +77,13 @@ function readDeadline(contract: MarketContract): string {
     return "Not explicitly stated";
   }
   return new Date(contract.endDate).toLocaleString("en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
     timeZone: "America/New_York",
     timeZoneName: "short",
+    year: "numeric",
   });
 }
 
