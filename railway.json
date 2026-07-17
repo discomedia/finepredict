@@ -5,6 +5,7 @@
     "buildCommand": "pnpm --filter @finepredict/shared build && pnpm --filter @finepredict/api build"
   },
   "deploy": {
+    "preDeployCommand": "pnpm db:migrate",
     "startCommand": "pnpm --filter @finepredict/api start",
     "healthcheckPath": "/api/health/live",
     "healthcheckTimeout": 30,
