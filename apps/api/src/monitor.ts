@@ -3,7 +3,7 @@ import { Pool } from "pg";
 import { loadConfig } from "./config.js";
 import { createDatabaseResources } from "./database/client.js";
 import { BillingService } from "./integrations/billing.js";
-import { ResendEmailService } from "./integrations/email.js";
+import { DiscoMailEmailService } from "./integrations/email.js";
 import { log } from "./log.js";
 import { MonitorService } from "./monitoring/service.js";
 import { MonitoringStore } from "./monitoring/store.js";
@@ -30,9 +30,9 @@ try {
       `Another monitor run holds the advisory lock; exiting.`,
     );
   } else {
-    const emailService = new ResendEmailService(
-      config.resendApiKey,
-      config.resendFromEmail,
+    const emailService = new DiscoMailEmailService(
+      config.discoMailApiKey,
+      config.discoMailFromEmail,
     );
     const result = await new MonitorService({
       billingService: new BillingService(config),

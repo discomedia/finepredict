@@ -25,7 +25,7 @@ describe("Stripe webhook verification", () => {
   it("accepts an unmodified signed body and rejects a changed body", () => {
     const service = new BillingService(
       loadConfig({
-        STRIPE_SECRET_KEY: "sk_test_placeholder",
+        STRIPE_API_KEY: "sk_test_placeholder",
         STRIPE_WATCHLIST_PRICE_ID: "price_watchlists",
         STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
       }),

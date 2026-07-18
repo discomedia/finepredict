@@ -233,29 +233,27 @@ function createRequestContext(dependencies: DeveloperApiRouterDependencies) {
         sendApiError(response, 401, "invalid_api_key", `API key is invalid.`);
         return;
       }
-      const used = await dependencies.productStore.consumeApiUnit(
+      const usage = await dependencies.productStore.consumeApiUnit(
         key,
         dependencies.config.developerApiDailyLimit,
       );
-      if (used === null) {
-        response.setHeader("x-ratelimit-remaining", "0");
+      response.setHeader("x-ratelimit-limit", String(usage.dailyLimit));
+      response.setHeader("x-ratelimit-remaining", String(usage.dailyRemaining));
+      response.setHeader("x-ratelimit-tier", usage.tier);
+      if (!usage.allowed) {
+        response.setHeader("retry-after", String(usage.retryAfterSeconds));
         sendApiError(
           response,
           429,
           "rate_limit_exceeded",
-          `Daily developer API quota reached.`,
+          usage.reason === "minute"
+            ? `Free API accounts may make one request per UTC minute.`
+            : `${usage.tier === "free" ? "Free" : "Paid"} API daily quota reached.`,
         );
         return;
       }
       response.locals.apiKey = key;
-      response.locals.remaining = Math.max(
-        0,
-        dependencies.config.developerApiDailyLimit - used,
-      );
-      response.setHeader(
-        "x-ratelimit-remaining",
-        String(response.locals.remaining),
-      );
+      response.locals.remaining = usage.dailyRemaining;
       next();
     } catch (error) {
       next(error);

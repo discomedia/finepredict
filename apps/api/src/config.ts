@@ -12,15 +12,15 @@ export interface AppConfig {
   databaseUrl: string | null;
   defaultModel: "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-5.6";
   developerApiDailyLimit: number;
+  discoMailApiKey: string | null;
+  discoMailFromEmail: string;
   monitorDryRun: boolean;
   openAiApiKey: string | null;
   polygonRpcUrl: string | null;
   port: number;
-  resendApiKey: string | null;
-  resendFromEmail: string;
   stripeApiMeterEventName: string | null;
+  stripeApiKey: string | null;
   stripeApiPriceId: string | null;
-  stripeSecretKey: string | null;
   stripeWatchlistPriceId: string | null;
   stripeWebhookSecret: string | null;
   webOrigin: string;
@@ -64,16 +64,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseUrl: env.DATABASE_URL?.trim() || null,
     defaultModel,
     developerApiDailyLimit,
+    discoMailApiKey: env.DISCO_MAIL_API_KEY?.trim() || null,
+    discoMailFromEmail:
+      env.DISCO_MAIL_FROM_EMAIL?.trim() ||
+      "FinePredict <hello@fp.discomedia.co>",
     monitorDryRun: parseBooleanEnvironmentValue(env.MONITOR_DRY_RUN, true),
     openAiApiKey: env.OPENAI_API_KEY?.trim() || null,
     polygonRpcUrl: env.POLYGON_RPC_URL?.trim() || null,
     port,
-    resendApiKey: env.RESEND_API_KEY?.trim() || null,
-    resendFromEmail:
-      env.RESEND_FROM_EMAIL?.trim() || "FinePredict <alerts@finepredict.com>",
     stripeApiMeterEventName: env.STRIPE_API_METER_EVENT_NAME?.trim() || null,
+    stripeApiKey: env.STRIPE_API_KEY?.trim() || null,
     stripeApiPriceId: env.STRIPE_API_PRICE_ID?.trim() || null,
-    stripeSecretKey: env.STRIPE_SECRET_KEY?.trim() || null,
     stripeWatchlistPriceId: env.STRIPE_WATCHLIST_PRICE_ID?.trim() || null,
     stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET?.trim() || null,
     webOrigin: env.WEB_ORIGIN?.trim() || "http://localhost:5173",

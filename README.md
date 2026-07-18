@@ -14,9 +14,9 @@ It deliberately does not create a pseudo-precise risk score. Reports show specif
 - Immutable, timestamped Neon snapshots with SHA-256 hashes and visual line diffs
 - Platform-end countdowns and direct resolution-source reachability checks
 - Permanent public report URLs and a recent-report index
-- Passwordless Better Auth accounts delivered through Resend
+- Passwordless Better Auth accounts delivered through Disco Mail
 - Paid watchlists with hourly rule, source, lifecycle, and dispute monitoring
-- Separate metered developer API keys and daily usage accounting
+- Free developer API keys with account-wide limits and an optional metered upgrade
 - Reviewed historical dispute cases and related-wording matches
 - Embeddable report mode and a Manifest V3 market-page extension
 - Report-specific canonical, social, and structured metadata at the edge
@@ -31,7 +31,7 @@ apps/api        Express API, Drizzle persistence, market adapters, deployed on R
 apps/extension  Manifest V3 content script for supported market pages
 packages/shared Zod schemas and types shared by both apps
 Neon            Postgres reports, snapshots, and system settings
-Resend          Magic-link and watchlist-alert email delivery
+Disco Mail      Magic-link and watchlist-alert email delivery
 Stripe          Watchlist subscriptions and metered developer API billing
 Polygon RPC     Optional Polymarket on-chain dispute evidence
 ```
@@ -58,7 +58,6 @@ package-level env files.
 | Variable                      | Purpose                                                                                                                                          |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `DATABASE_URL`                | Pooled Neon Postgres connection string. Without it, public reports use non-persistent memory storage and account/product routes are unavailable. |
-| `TEST_DATABASE_URL`           | Separate disposable Postgres database used only by the database-backed integration suite. Never use production.                                  |
 | `OPENAI_API_KEY`              | Enables LLM explanations. Deterministic analysis still works without it.                                                                         |
 | `FINEPREDICT_MODEL`           | Server default model; defaults to `gpt-5.6-luna`.                                                                                                |
 | `ADMIN_API_KEY`               | Emergency server-side key accepted through `x-admin-api-key` for settings and dispute administration.                                            |
@@ -68,15 +67,15 @@ package-level env files.
 | `WEB_ORIGIN`                  | Comma-separated browser origins allowed by CORS and Better Auth.                                                                                 |
 | `BETTER_AUTH_SECRET`          | Better Auth signing secret. Generate at least 32 random bytes; leaving it empty disables account routes.                                         |
 | `BETTER_AUTH_URL`             | Public API origin used by Better Auth, for example `https://<api>.up.railway.app`.                                                               |
-| `RESEND_API_KEY`              | Sends magic links and monitor alert email.                                                                                                       |
-| `RESEND_FROM_EMAIL`           | Verified Resend sender, for example `FinePredict <alerts@example.com>`.                                                                          |
-| `STRIPE_SECRET_KEY`           | Server-side Stripe API key shared by both billing products.                                                                                      |
+| `DISCO_MAIL_API_KEY`          | Server-side Disco Mail key used for magic links and monitor alert email.                                                                         |
+| `DISCO_MAIL_FROM_EMAIL`       | Disco Mail sender on the verified `fp.discomedia.co` domain.                                                                                     |
+| `STRIPE_API_KEY`              | Server-side Stripe API key shared by both billing products.                                                                                      |
 | `STRIPE_WATCHLIST_PRICE_ID`   | Recurring flat-price subscription for watchlist access.                                                                                          |
 | `STRIPE_API_PRICE_ID`         | Separate recurring metered price for developer API access.                                                                                       |
 | `STRIPE_WEBHOOK_SECRET`       | Signing secret for `POST /api/billing/webhook`.                                                                                                  |
 | `STRIPE_API_METER_EVENT_NAME` | Exact event name of the Stripe Billing Meter attached to the API price.                                                                          |
 | `API_KEY_HASH_SECRET`         | HMAC secret for developer API keys; must be at least 32 characters.                                                                              |
-| `DEVELOPER_API_DAILY_LIMIT`   | Atomic per-key daily request limit; defaults to `1000`.                                                                                          |
+| `DEVELOPER_API_DAILY_LIMIT`   | Paid per-key daily request limit; defaults to `1000`. Free accounts receive 1 request per UTC minute and 10 per UTC day across all keys.         |
 | `MONITOR_DRY_RUN`             | Defaults to `true`; suppresses email and Stripe meter writes while retaining internal monitor records.                                           |
 | `POLYGON_RPC_URL`             | Optional Polygon mainnet JSON-RPC endpoint for Polymarket UMA dispute evidence.                                                                  |
 | `VITE_API_BASE_URL`           | API origin compiled into the browser client.                                                                                                     |
@@ -91,8 +90,8 @@ openssl rand -hex 32    # API_KEY_HASH_SECRET
 
 Account access is intentionally unavailable when `BETTER_AUTH_SECRET` or
 `DATABASE_URL` is absent; public analysis and report routes continue to work.
-Configure Better Auth and Resend together because passwordless sign-in requires
-email delivery. Billing remains unavailable without its Stripe credentials, and
+Configure Better Auth and Disco Mail together because passwordless sign-in
+requires email delivery. Billing remains unavailable without its Stripe credentials, and
 the public product continues without paid entitlements. The developer bearer
 API returns an explicit configuration error when `API_KEY_HASH_SECRET` is absent
 or shorter than 32 characters.
@@ -108,9 +107,17 @@ sends `stripe_customer_id` and `value` in each meter event. Register
 `customer.subscription.deleted`, then store its signing secret in
 `STRIPE_WEBHOOK_SECRET`.
 
-In Resend, verify the domain or exact sender used by `RESEND_FROM_EMAIL`. A
-Polygon mainnet RPC provider is optional: omitting `POLYGON_RPC_URL` skips only
-on-chain Polymarket evidence and does not disable normal market monitoring.
+Stripe CLI commands use test mode unless `--live` is passed. The test and live
+catalogs use US$12/month for watchlists and US$0.01 per API unit, summed by the
+`finepredict_api_usage` meter. Store price IDs matching the mode of
+`STRIPE_API_KEY`; the API key, prices, meter, and webhook signing secret must all
+belong to the same Stripe mode.
+
+The Disco Mail key must have access to `fp.discomedia.co`; FinePredict defaults
+to `FinePredict <hello@fp.discomedia.co>`. A Polygon mainnet RPC provider is
+optional: it reads UMA dispute and resolution transactions for Polymarket
+contracts. Omitting `POLYGON_RPC_URL` skips only that on-chain evidence and does
+not disable normal market, source, lifecycle, or alert monitoring.
 
 ## Validation
 
@@ -122,12 +129,10 @@ pnpm test:integration
 pnpm build
 ```
 
-The database-backed integration suite is enabled only when
-`TEST_DATABASE_URL` is set. Use a separate disposable database:
-
-```bash
-TEST_DATABASE_URL='postgresql://user:password@host/test_database?sslmode=require' pnpm test:integration
-```
+The database-backed integration suite always uses the root `DATABASE_URL`. It
+applies pending migrations, creates uniquely identified temporary product and
+monitoring rows, and removes those rows before closing its database connections.
+The command fails instead of silently skipping when `DATABASE_URL` is absent.
 
 To verify upstream APIs and the OpenAI path with real credentials, run the API and submit a current market URL:
 
@@ -169,8 +174,9 @@ pnpm db:migrate
 
 The checked-in migrations include Better Auth tables, product subscriptions,
 watchlists, immutable observations/snapshots, alerts, dispute history, API keys,
-daily usage, and Stripe webhook idempotency. Apply migrations to the intended
-database before enabling auth, billing, or monitoring.
+account-wide free minute windows, daily usage, and Stripe webhook idempotency.
+Apply migrations to the intended database before enabling auth, billing, or
+monitoring.
 
 ## Monitoring
 
@@ -190,8 +196,8 @@ MONITOR_DRY_RUN=true pnpm --filter @finepredict/api monitor:dev
 
 Dry run is the safe default. It still writes monitor-run records, market
 observations, changed snapshots, and deduplicated alert records to the configured
-database, but it does not send Resend email or Stripe meter events. Set
-`MONITOR_DRY_RUN=false` only after Resend, Stripe, and production entitlements
+database, but it does not send Disco Mail email or Stripe meter events. Set
+`MONITOR_DRY_RUN=false` only after Disco Mail, Stripe, and production entitlements
 have been verified. The process takes a Postgres advisory lock, retries each
 market once, closes its database clients, and exits.
 
@@ -209,8 +215,8 @@ railway variable set DATABASE_URL=... OPENAI_API_KEY=... ADMIN_API_KEY=... \
   ADMIN_EMAILS=admin@example.com \
   FINEPREDICT_MODEL=gpt-5.6-luna APP_URL=https://<site>.netlify.app \
   WEB_ORIGIN=https://<site>.netlify.app BETTER_AUTH_SECRET=... \
-  BETTER_AUTH_URL=https://<api>.up.railway.app RESEND_API_KEY=... \
-  RESEND_FROM_EMAIL='FinePredict <alerts@example.com>' STRIPE_SECRET_KEY=... \
+  BETTER_AUTH_URL=https://<api>.up.railway.app DISCO_MAIL_API_KEY=... \
+  DISCO_MAIL_FROM_EMAIL='FinePredict <hello@fp.discomedia.co>' STRIPE_API_KEY=... \
   STRIPE_WATCHLIST_PRICE_ID=price_... STRIPE_API_PRICE_ID=price_... \
   STRIPE_WEBHOOK_SECRET=whsec_... STRIPE_API_METER_EVENT_NAME=... \
   API_KEY_HASH_SECRET=... DEVELOPER_API_DAILY_LIMIT=1000 \

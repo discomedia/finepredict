@@ -13,7 +13,7 @@
     "monitor:dev": "tsx src/monitor.ts",
     "start": "node dist/server.js",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
-    "test:integration": "vitest run src/app.integration.test.ts src/database/product-store.integration.test.ts",
+    "test:integration": "vitest run src/app.integration.test.ts src/auth.integration.test.ts src/database/product-store.integration.test.ts",
     "pretypecheck": "pnpm --filter @finepredict/shared build",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -28,7 +28,6 @@
     "express": "^5.1.0",
     "pg": "^8.22.0",
     "postgres": "^3.4.7",
-    "resend": "^6.17.2",
     "stripe": "^22.3.2",
     "viem": "^2.55.2",
     "zod": "^4.4.3"

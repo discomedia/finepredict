@@ -1,4 +1,4 @@
-import { Resend } from "resend";
+import { disco } from "@discomedia/utils";
 
 import { log } from "../log.js";
 
@@ -17,31 +17,47 @@ export interface EmailService {
   send(input: SendEmailInput): Promise<void>;
 }
 
-/** Resend-backed production email delivery. */
-export class ResendEmailService implements EmailService {
+/** Minimal Disco Mail client contract used for dependency-safe tests. */
+export interface DiscoMailClient {
+  send(
+    input: {
+      from: string;
+      html: string;
+      subject: string;
+      text: string;
+      to: string | string[];
+    },
+    options: { apiKey: string; idempotencyKey: string },
+  ): Promise<{ emailId: string }>;
+}
+
+/** Disco Mail-backed production email delivery. */
+export class DiscoMailEmailService implements EmailService {
   public readonly configured: boolean;
-  private readonly client: Resend | null;
 
   /**
-   * Creates a Resend email service that remains disabled without a key.
+   * Creates a Disco Mail service that remains disabled without a key.
    *
-   * @param apiKey - Optional Resend API key.
-   * @param fromEmail - Verified Resend sender identity.
+   * @param apiKey - Optional Disco Mail API key.
+   * @param fromEmail - Verified Disco Mail sender identity.
+   * @param client - Disco Mail client implementation.
    */
   public constructor(
-    apiKey: string | null,
+    private readonly apiKey: string | null,
     private readonly fromEmail: string,
+    private readonly client: DiscoMailClient = disco.mail,
   ) {
     this.configured = Boolean(apiKey);
-    this.client = apiKey ? new Resend(apiKey) : null;
   }
 
   /** @inheritdoc */
   public async send(input: SendEmailInput): Promise<void> {
-    if (!this.client) {
-      throw new Error(`FinePredict email: RESEND_API_KEY is not configured.`);
+    if (!this.apiKey) {
+      throw new Error(
+        `FinePredict email: DISCO_MAIL_API_KEY is not configured.`,
+      );
     }
-    const result = await this.client.emails.send(
+    const result = await this.client.send(
       {
         from: this.fromEmail,
         html: input.html,
@@ -49,13 +65,10 @@ export class ResendEmailService implements EmailService {
         text: input.text,
         to: input.to,
       },
-      { idempotencyKey: input.idempotencyKey },
+      { apiKey: this.apiKey, idempotencyKey: input.idempotencyKey },
     );
-    if (result.error) {
-      throw new Error(`FinePredict email: ${result.error.message}`);
-    }
-    log("ResendEmailService.send", `Delivered email through Resend.`, {
-      emailId: result.data?.id ?? null,
+    log("DiscoMailEmailService.send", `Delivered email through Disco Mail.`, {
+      emailId: result.emailId,
       subject: input.subject,
     });
   }

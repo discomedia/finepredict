@@ -23,7 +23,7 @@ export interface AuthRuntime {
 }
 
 /**
- * Creates Better Auth with Neon persistence and Resend magic links.
+ * Creates Better Auth with Neon persistence and Disco Mail magic links.
  *
  * @param config - Validated application configuration.
  * @param emailService - Email delivery adapter used for magic links.
@@ -124,7 +124,7 @@ function escapeHtml(value: string): string {
 }
 
 /**
- * Creates a non-secret bounded key fragment for Resend idempotency.
+ * Creates a non-secret bounded key fragment for Disco Mail idempotency.
  *
  * @param value - Magic-link URL.
  * @returns Stable bounded key fragment.

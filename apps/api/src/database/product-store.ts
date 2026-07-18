@@ -25,6 +25,7 @@ import {
   apiIdempotency,
   apiKeys,
   apiUsageDaily,
+  apiUsageFreeMinutes,
   authUsers,
   disputeCases,
   disputeEvents,
@@ -39,6 +40,12 @@ import {
 /** Maximum active markets included with the watchlist subscription. */
 export const ACTIVE_MARKET_LIMIT = 25;
 
+/** Maximum accepted free developer API requests per UTC day. */
+export const FREE_API_DAILY_LIMIT = 10;
+
+/** Maximum accepted free developer API requests per UTC minute window. */
+export const FREE_API_MINUTE_LIMIT = 1;
+
 /** Billing identifiers needed for Checkout, portal, and usage reporting. */
 export interface BillingIdentity {
   stripeCustomerId: string | null;
@@ -47,10 +54,28 @@ export interface BillingIdentity {
 /** API key details returned after bearer authentication. */
 export interface VerifiedApiKeyRecord {
   apiKeyId: string;
+  developerApiEntitled: boolean;
   scopes: ApiKeyScope[];
   stripeCustomerId: string | null;
   userId: string;
 }
+
+/** Result of atomically applying the applicable API usage limit. */
+export type ApiUsageDecision =
+  | {
+      allowed: true;
+      dailyLimit: number;
+      dailyRemaining: number;
+      tier: "free" | "paid";
+    }
+  | {
+      allowed: false;
+      dailyLimit: number;
+      dailyRemaining: number;
+      reason: "daily" | "minute";
+      retryAfterSeconds: number;
+      tier: "free" | "paid";
+    };
 
 /** Cached response associated with a developer idempotency key. */
 export interface IdempotentApiResponse {
@@ -179,26 +204,6 @@ export class ProductStore {
           updatedAt: new Date(),
         },
       });
-  }
-
-  /**
-   * Checks whether an account has an active metered developer API subscription.
-   *
-   * @param userId - Authenticated account ID.
-   * @returns True when the separate API subscription is entitled.
-   */
-  public async isDeveloperApiEntitled(userId: string): Promise<boolean> {
-    const [row] = await this.database
-      .select({ status: subscriptions.status })
-      .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.userId, userId),
-          eq(subscriptions.product, "developer_api"),
-        ),
-      )
-      .limit(1);
-    return row ? isSubscriptionEntitled(row.status) : false;
   }
 
   /**
@@ -331,7 +336,12 @@ export class ProductStore {
       const [subscription] = await transaction
         .select({ status: subscriptions.status })
         .from(subscriptions)
-        .where(eq(subscriptions.userId, userId))
+        .where(
+          and(
+            eq(subscriptions.userId, userId),
+            eq(subscriptions.product, "watchlists"),
+          ),
+        )
         .limit(1);
       if (!subscription || !isSubscriptionEntitled(subscription.status)) {
         throw new ProductAccessError(
@@ -742,25 +752,21 @@ export class ProductStore {
     const [row] = await this.database
       .select({
         apiKeyId: apiKeys.id,
+        developerApiProduct: subscriptions.product,
         scopes: apiKeys.scopes,
         stripeCustomerId: subscriptions.stripeCustomerId,
         userId: apiKeys.userId,
       })
       .from(apiKeys)
-      .innerJoin(
+      .leftJoin(
         subscriptions,
         and(
           eq(apiKeys.userId, subscriptions.userId),
           eq(subscriptions.product, "developer_api"),
-        ),
-      )
-      .where(
-        and(
-          eq(apiKeys.secretHash, secretHash),
-          isNull(apiKeys.revokedAt),
           inArray(subscriptions.status, ["active", "trialing"]),
         ),
       )
+      .where(and(eq(apiKeys.secretHash, secretHash), isNull(apiKeys.revokedAt)))
       .limit(1);
     if (!row) {
       return null;
@@ -771,6 +777,7 @@ export class ProductStore {
       .where(eq(apiKeys.id, row.apiKeyId));
     return {
       apiKeyId: row.apiKeyId,
+      developerApiEntitled: row.developerApiProduct === "developer_api",
       scopes: ApiKeyScopeSchema.array().parse(row.scopes),
       stripeCustomerId: row.stripeCustomerId,
       userId: row.userId,
@@ -778,32 +785,118 @@ export class ProductStore {
   }
 
   /**
-   * Atomically consumes one daily API unit up to the configured quota.
+   * Atomically consumes one API unit using paid or account-wide free limits.
    *
    * @param key - Authorized API key details.
-   * @param limit - Maximum units allowed per UTC day.
-   * @returns Updated usage or null when quota is exhausted.
+   * @param paidDailyLimit - Maximum paid units allowed per key and UTC day.
+   * @param now - Clock value used to identify UTC limit windows.
+   * @returns Allowance decision with tier, remaining daily units, and retry data.
    */
   public async consumeApiUnit(
     key: VerifiedApiKeyRecord,
-    limit: number,
-  ): Promise<number | null> {
-    const usageDate = new Date().toISOString().slice(0, 10);
-    const rows = await this.database
-      .insert(apiUsageDaily)
-      .values({
-        apiKeyId: key.apiKeyId,
-        billableUnits: 1,
-        usageDate,
-        userId: key.userId,
-      })
-      .onConflictDoUpdate({
-        target: [apiUsageDaily.apiKeyId, apiUsageDaily.usageDate],
-        set: { billableUnits: sql`${apiUsageDaily.billableUnits} + 1` },
-        setWhere: lt(apiUsageDaily.billableUnits, limit),
-      })
-      .returning({ billableUnits: apiUsageDaily.billableUnits });
-    return rows[0]?.billableUnits ?? null;
+    paidDailyLimit: number,
+    now: Date = new Date(),
+  ): Promise<ApiUsageDecision> {
+    const usageDate = now.toISOString().slice(0, 10);
+    if (key.developerApiEntitled) {
+      const rows = await this.database
+        .insert(apiUsageDaily)
+        .values({
+          apiKeyId: key.apiKeyId,
+          billableUnits: 1,
+          usageDate,
+          userId: key.userId,
+        })
+        .onConflictDoUpdate({
+          target: [apiUsageDaily.apiKeyId, apiUsageDaily.usageDate],
+          set: { billableUnits: sql`${apiUsageDaily.billableUnits} + 1` },
+          setWhere: lt(apiUsageDaily.billableUnits, paidDailyLimit),
+        })
+        .returning({ billableUnits: apiUsageDaily.billableUnits });
+      const used = rows[0]?.billableUnits;
+      return used === undefined
+        ? {
+            allowed: false,
+            dailyLimit: paidDailyLimit,
+            dailyRemaining: 0,
+            reason: "daily",
+            retryAfterSeconds: secondsUntilNextUtcDay(now),
+            tier: "paid",
+          }
+        : {
+            allowed: true,
+            dailyLimit: paidDailyLimit,
+            dailyRemaining: Math.max(0, paidDailyLimit - used),
+            tier: "paid",
+          };
+    }
+
+    return this.database.transaction(async (transaction) => {
+      await transaction.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${`free-api-limit:${key.userId}`}))`,
+      );
+      const [dailyUsage] = await transaction
+        .select({
+          units: sql<number>`coalesce(sum(${apiUsageDaily.billableUnits}), 0)::int`,
+        })
+        .from(apiUsageDaily)
+        .where(
+          and(
+            eq(apiUsageDaily.userId, key.userId),
+            eq(apiUsageDaily.usageDate, usageDate),
+          ),
+        );
+      const usedToday = Number(dailyUsage?.units ?? 0);
+      if (usedToday >= FREE_API_DAILY_LIMIT) {
+        return {
+          allowed: false,
+          dailyLimit: FREE_API_DAILY_LIMIT,
+          dailyRemaining: 0,
+          reason: "daily",
+          retryAfterSeconds: secondsUntilNextUtcDay(now),
+          tier: "free",
+        };
+      }
+
+      const usageMinute = new Date(Math.floor(now.getTime() / 60_000) * 60_000);
+      const minuteRows = await transaction
+        .insert(apiUsageFreeMinutes)
+        .values({ usageMinute, userId: key.userId })
+        .onConflictDoNothing()
+        .returning({ id: apiUsageFreeMinutes.id });
+      if (minuteRows.length < FREE_API_MINUTE_LIMIT) {
+        return {
+          allowed: false,
+          dailyLimit: FREE_API_DAILY_LIMIT,
+          dailyRemaining: FREE_API_DAILY_LIMIT - usedToday,
+          reason: "minute",
+          retryAfterSeconds: Math.max(
+            1,
+            Math.ceil((usageMinute.getTime() + 60_000 - now.getTime()) / 1000),
+          ),
+          tier: "free",
+        };
+      }
+
+      await transaction
+        .insert(apiUsageDaily)
+        .values({
+          apiKeyId: key.apiKeyId,
+          billableUnits: 1,
+          usageDate,
+          userId: key.userId,
+        })
+        .onConflictDoUpdate({
+          target: [apiUsageDaily.apiKeyId, apiUsageDaily.usageDate],
+          set: { billableUnits: sql`${apiUsageDaily.billableUnits} + 1` },
+        });
+      return {
+        allowed: true,
+        dailyLimit: FREE_API_DAILY_LIMIT,
+        dailyRemaining: FREE_API_DAILY_LIMIT - usedToday - 1,
+        tier: "free",
+      };
+    });
   }
 
   /**
@@ -814,13 +907,18 @@ export class ProductStore {
    */
   public async listUsage(userId: string): Promise<UsageSummary[]> {
     const rows = await this.database
-      .select()
+      .select({
+        billableUnits: sql<number>`sum(${apiUsageDaily.billableUnits})::int`,
+        reportedToStripeAt: sql<Date | null>`case when bool_and(${apiUsageDaily.reportedToStripeAt} is not null) then max(${apiUsageDaily.reportedToStripeAt}) else null end`,
+        usageDate: apiUsageDaily.usageDate,
+      })
       .from(apiUsageDaily)
       .where(eq(apiUsageDaily.userId, userId))
+      .groupBy(apiUsageDaily.usageDate)
       .orderBy(desc(apiUsageDaily.usageDate))
       .limit(90);
     return rows.map((row) => ({
-      billableUnits: row.billableUnits,
+      billableUnits: Number(row.billableUnits),
       date: row.usageDate,
       reportedToStripeAt: row.reportedToStripeAt?.toISOString() ?? null,
     }));
@@ -978,6 +1076,21 @@ export class ProductAccessError extends Error {
  */
 export function isSubscriptionEntitled(status: string): boolean {
   return status === "active" || status === "trialing";
+}
+
+/**
+ * Calculates the retry delay until the next UTC day boundary.
+ *
+ * @param now - Current clock value.
+ * @returns Whole seconds until 00:00 UTC on the following day.
+ */
+function secondsUntilNextUtcDay(now: Date): number {
+  const nextUtcDay = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+  );
+  return Math.max(1, Math.ceil((nextUtcDay - now.getTime()) / 1000));
 }
 
 /**

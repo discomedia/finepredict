@@ -189,9 +189,7 @@ export const subscriptions = pgTable(
       table.userId,
       table.product,
     ),
-    uniqueIndex("subscriptions_stripe_customer_unique").on(
-      table.stripeCustomerId,
-    ),
+    index("subscriptions_stripe_customer_idx").on(table.stripeCustomerId),
     uniqueIndex("subscriptions_stripe_subscription_unique").on(
       table.stripeSubscriptionId,
     ),
@@ -488,6 +486,27 @@ export const apiUsageDaily = pgTable(
   ],
 );
 
+/** One accepted free-tier request in an account-wide UTC minute window. */
+export const apiUsageFreeMinutes = pgTable(
+  "api_usage_free_minutes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    usageMinute: timestamp("usage_minute", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("api_usage_free_minutes_user_minute_unique").on(
+      table.userId,
+      table.usageMinute,
+    ),
+  ],
+);
+
 /** Idempotent response cache for developer API report creation. */
 export const apiIdempotency = pgTable(
   "api_idempotency",
@@ -518,6 +537,7 @@ export const databaseSchema = {
   apiIdempotency,
   apiKeys,
   apiUsageDaily,
+  apiUsageFreeMinutes,
   authAccounts,
   authSessions,
   authUsers,

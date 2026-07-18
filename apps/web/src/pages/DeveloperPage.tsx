@@ -7,7 +7,6 @@ import { Check, Copy, KeyRound, Trash2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 
 import {
-  ApiRequestError,
   createApiKey,
   createDeveloperApiCheckout,
   getPublicApiUrl,
@@ -36,7 +35,6 @@ export function DeveloperPage() {
   const [signedOut, setSignedOut] = useState(false);
   const [saving, setSaving] = useState(false);
   const [openingBilling, setOpeningBilling] = useState(false);
-  const [apiBillingRequired, setApiBillingRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   /**
@@ -98,14 +96,10 @@ export function DeveloperPage() {
     setSecret(null);
     try {
       const created = await createApiKey(name, scopes);
-      setApiBillingRequired(false);
       setSecret(created.secret);
       setName("");
       await loadDeveloperAccount();
     } catch (caughtError) {
-      setApiBillingRequired(
-        caughtError instanceof ApiRequestError && caughtError.status === 402,
-      );
       setError(errorMessage(caughtError, "The API key could not be created."));
     } finally {
       setSaving(false);
@@ -221,11 +215,10 @@ export function DeveloperPage() {
               >
                 <KeyRound size={15} /> Create key
               </button>
-              <div
-                className={`api-billing-note${apiBillingRequired ? " is-required" : ""}`}
-              >
+              <div className="api-billing-note">
                 <p>
-                  API keys require a separate metered developer subscription.
+                  Free accounts include one request per UTC minute and 10 per
+                  UTC day. Upgrade for higher metered limits.
                 </p>
                 <button
                   className="secondary-button"
@@ -233,7 +226,7 @@ export function DeveloperPage() {
                   disabled={openingBilling}
                   onClick={() => void handleApiBilling()}
                 >
-                  {openingBilling ? "Opening billing…" : "Set up API billing"}
+                  {openingBilling ? "Opening billing…" : "Upgrade API limits"}
                 </button>
               </div>
             </form>

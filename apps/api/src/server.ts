@@ -10,7 +10,7 @@ import {
 } from "./database/store.js";
 import { log } from "./log.js";
 import { BillingService } from "./integrations/billing.js";
-import { ResendEmailService } from "./integrations/email.js";
+import { DiscoMailEmailService } from "./integrations/email.js";
 
 const config = loadConfig();
 
@@ -31,9 +31,9 @@ if (!databaseResources) {
     "DATABASE_URL is absent; using non-persistent in-memory report storage.",
   );
 }
-const emailService = new ResendEmailService(
-  config.resendApiKey,
-  config.resendFromEmail,
+const emailService = new DiscoMailEmailService(
+  config.discoMailApiKey,
+  config.discoMailFromEmail,
 );
 const authRuntime = createAuthRuntime(config, emailService);
 const app = createApp({

@@ -387,16 +387,6 @@ export function createProductRouter(
     async (request, response: Response<unknown, FinePredictLocals>, next) => {
       try {
         const input = CreateApiKeyRequestSchema.parse(request.body);
-        if (
-          !(await dependencies.productStore.isDeveloperApiEntitled(
-            response.locals.user.id,
-          ))
-        ) {
-          throw new ProductAccessError(
-            402,
-            `An active developer API subscription is required to create keys.`,
-          );
-        }
         const generated = generateApiKey(dependencies.config.apiKeyHashSecret);
         const apiKey = await dependencies.productStore.createApiKey({
           hash: generated.hash,

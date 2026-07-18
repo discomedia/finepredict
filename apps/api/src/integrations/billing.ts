@@ -27,17 +27,15 @@ export class BillingService {
    */
   public constructor(private readonly config: AppConfig) {
     this.watchlistConfigured = Boolean(
-      config.stripeSecretKey && config.stripeWatchlistPriceId,
+      config.stripeApiKey && config.stripeWatchlistPriceId,
     );
     this.developerApiConfigured = Boolean(
-      config.stripeSecretKey &&
+      config.stripeApiKey &&
       config.stripeApiPriceId &&
       config.stripeApiMeterEventName,
     );
     this.configured = this.watchlistConfigured || this.developerApiConfigured;
-    this.stripe = config.stripeSecretKey
-      ? new Stripe(config.stripeSecretKey)
-      : null;
+    this.stripe = config.stripeApiKey ? new Stripe(config.stripeApiKey) : null;
   }
 
   /**
@@ -229,9 +227,7 @@ export class BillingService {
    */
   private requireStripe(): Stripe {
     if (!this.stripe) {
-      throw new Error(
-        `FinePredict billing: STRIPE_SECRET_KEY is not configured.`,
-      );
+      throw new Error(`FinePredict billing: STRIPE_API_KEY is not configured.`);
     }
     return this.stripe;
   }

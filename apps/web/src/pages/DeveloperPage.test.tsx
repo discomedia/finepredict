@@ -9,7 +9,6 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  ApiRequestError,
   createApiKey,
   createDeveloperApiCheckout,
   listApiKeys,
@@ -35,15 +34,21 @@ afterEach(() => {
 });
 
 describe("DeveloperPage", () => {
-  it("offers API billing and highlights it after a 402 key response", async () => {
+  it("creates a free API key and offers a paid limit upgrade", async () => {
     vi.mocked(listApiKeys).mockResolvedValue([]);
     vi.mocked(listApiUsage).mockResolvedValue([]);
-    vi.mocked(createApiKey).mockRejectedValue(
-      new ApiRequestError(
-        "An active developer API subscription is required.",
-        402,
-      ),
-    );
+    vi.mocked(createApiKey).mockResolvedValue({
+      apiKey: {
+        createdAt: "2026-07-18T00:00:00.000Z",
+        id: "0f5fb707-9a6f-4a47-913c-4439e81561a8",
+        lastUsedAt: null,
+        name: "Production",
+        prefix: "fp_live_test",
+        revokedAt: null,
+        scopes: ["reports:read"],
+      },
+      secret: "fp_live_test_secret",
+    });
     vi.mocked(createDeveloperApiCheckout).mockRejectedValue(
       new Error("Checkout unavailable in test."),
     );
@@ -59,14 +64,10 @@ describe("DeveloperPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Create key" }));
 
-    expect(
-      await screen.findByText(/active developer api subscription is required/i),
-    ).toBeInTheDocument();
-    expect(
-      container.querySelector(".api-billing-note.is-required"),
-    ).not.toBeNull();
+    expect(await screen.findByText("fp_live_test_secret")).toBeInTheDocument();
+    expect(container.querySelector(".api-billing-note")).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Set up API billing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upgrade API limits" }));
     await waitFor(() =>
       expect(createDeveloperApiCheckout).toHaveBeenCalledOnce(),
     );
