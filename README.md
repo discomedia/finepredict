@@ -14,7 +14,7 @@ It deliberately does not create a pseudo-precise risk score. Reports show specif
 - Immutable, timestamped Neon snapshots with SHA-256 hashes and visual line diffs
 - Platform-end countdowns and direct resolution-source reachability checks
 - Permanent public report URLs and a recent-report index
-- Passwordless Better Auth accounts delivered through Disco Mail
+- Passwordless managed Neon Auth accounts delivered through Disco Mail
 - Paid watchlists with hourly rule, source, lifecycle, and dispute monitoring
 - Free developer API keys with account-wide limits and an optional metered upgrade
 - Reviewed historical dispute cases and related-wording matches
@@ -30,7 +30,7 @@ apps/web        React + Vite client, deployed on Netlify
 apps/api        Express API, Drizzle persistence, market adapters, deployed on Railway
 apps/extension  Manifest V3 content script for supported market pages
 packages/shared Zod schemas and types shared by both apps
-Neon            Postgres reports, snapshots, and system settings
+Neon            Postgres product data and managed authentication
 Disco Mail      Magic-link and watchlist-alert email delivery
 Stripe          Watchlist subscriptions and metered developer API billing
 Polygon RPC     Optional Polymarket on-chain dispute evidence
@@ -61,12 +61,12 @@ package-level env files.
 | `OPENAI_API_KEY`              | Enables LLM explanations. Deterministic analysis still works without it.                                                                         |
 | `FINEPREDICT_MODEL`           | Server default model; defaults to `gpt-5.6-luna`.                                                                                                |
 | `ADMIN_API_KEY`               | Emergency server-side key accepted through `x-admin-api-key` for settings and dispute administration.                                            |
-| `ADMIN_EMAILS`                | Comma-separated email addresses promoted to `admin` when their Better Auth account is first created.                                             |
+| `ADMIN_EMAILS`                | Comma-separated email addresses treated as administrators after Neon Auth verifies their identity.                                               |
 | `PORT`                        | API listen port; defaults to `3001` locally and is injected by Railway.                                                                          |
 | `APP_URL`                     | Public web origin used for Stripe Checkout and portal redirects.                                                                                 |
-| `WEB_ORIGIN`                  | Comma-separated browser origins allowed by CORS and Better Auth.                                                                                 |
-| `BETTER_AUTH_SECRET`          | Better Auth signing secret. Generate at least 32 random bytes; leaving it empty disables account routes.                                         |
-| `BETTER_AUTH_URL`             | Public API origin used by Better Auth, for example `https://<api>.up.railway.app`.                                                               |
+| `WEB_ORIGIN`                  | Comma-separated browser origins allowed by the FinePredict API CORS policy.                                                                      |
+| `API_URL`                     | Public API origin advertised by OpenAPI, for example `https://<api>.up.railway.app`.                                                             |
+| `NEON_AUTH_BASE_URL`          | Branch-specific managed Neon Auth URL used by the API for JWT verification and webhook signing keys.                                             |
 | `DISCO_MAIL_API_KEY`          | Server-side Disco Mail key used for magic links and monitor alert email.                                                                         |
 | `DISCO_MAIL_FROM_EMAIL`       | Disco Mail sender on the verified `fp.discomedia.co` domain.                                                                                     |
 | `STRIPE_API_KEY`              | Server-side Stripe API key shared by both billing products.                                                                                      |
@@ -79,19 +79,20 @@ package-level env files.
 | `MONITOR_DRY_RUN`             | Defaults to `true`; suppresses email and Stripe meter writes while retaining internal monitor records.                                           |
 | `POLYGON_RPC_URL`             | Optional Polygon mainnet JSON-RPC endpoint for Polymarket UMA dispute evidence.                                                                  |
 | `VITE_API_BASE_URL`           | API origin compiled into the browser client.                                                                                                     |
+| `VITE_NEON_AUTH_URL`          | Branch-specific managed Neon Auth URL compiled into the browser client.                                                                          |
 | `FINEPREDICT_API_BASE_URL`    | API origin read by the Netlify report-metadata Edge Function.                                                                                    |
 
-Generate independent secrets locally:
+Generate the developer API secret locally:
 
 ```bash
-openssl rand -base64 32 # BETTER_AUTH_SECRET
-openssl rand -hex 32    # API_KEY_HASH_SECRET
+openssl rand -hex 32 # API_KEY_HASH_SECRET
 ```
 
-Account access is intentionally unavailable when `BETTER_AUTH_SECRET` or
+Account API access is intentionally unavailable when `NEON_AUTH_BASE_URL` or
 `DATABASE_URL` is absent; public analysis and report routes continue to work.
-Configure Better Auth and Disco Mail together because passwordless sign-in
-requires email delivery. Billing remains unavailable without its Stripe credentials, and
+The browser additionally requires `VITE_NEON_AUTH_URL`. Configure Neon Auth's
+signed `send.magic_link` webhook and Disco Mail together because passwordless
+sign-in requires email delivery. Billing remains unavailable without its Stripe credentials, and
 the public product continues without paid entitlements. The developer bearer
 API returns an explicit configuration error when `API_KEY_HASH_SECRET` is absent
 or shorter than 32 characters.
@@ -160,7 +161,9 @@ All report reads are public in the MVP.
 Account, watchlist, billing, dispute, and developer routes are documented by
 the generated OpenAPI document at `GET /api/openapi.json`. Developer clients use
 `Authorization: Bearer <fp_live_...>` under `/api/v1`; watchlist and account
-routes use the Better Auth session cookie.
+routes use a short-lived managed Neon Auth bearer token. Developer API keys and
+account JWTs are separate credentials even though both use the standard
+`Authorization` header.
 
 ## Database changes
 
@@ -172,11 +175,13 @@ git diff -- apps/api/drizzle
 pnpm db:migrate
 ```
 
-The checked-in migrations include Better Auth tables, product subscriptions,
-watchlists, immutable observations/snapshots, alerts, dispute history, API keys,
-account-wide free minute windows, daily usage, and Stripe webhook idempotency.
-Apply migrations to the intended database before enabling auth, billing, or
-monitoring.
+Neon owns its tables in the managed `neon_auth` schema. FinePredict migrations
+reference `neon_auth.user(id)` with UUID foreign keys but must never create,
+alter, or drop the managed table. The checked-in migrations include product
+subscriptions, watchlists, immutable observations/snapshots, alerts, dispute
+history, API keys, account-wide free minute windows, daily usage, and Stripe
+webhook idempotency. Apply migrations to the intended database after enabling
+Neon Auth and before enabling billing or monitoring.
 
 ## Monitoring
 
@@ -214,8 +219,9 @@ Set production variables through the platform CLIs rather than committing `.env`
 railway variable set DATABASE_URL=... OPENAI_API_KEY=... ADMIN_API_KEY=... \
   ADMIN_EMAILS=admin@example.com \
   FINEPREDICT_MODEL=gpt-5.6-luna APP_URL=https://<site>.netlify.app \
-  WEB_ORIGIN=https://<site>.netlify.app BETTER_AUTH_SECRET=... \
-  BETTER_AUTH_URL=https://<api>.up.railway.app DISCO_MAIL_API_KEY=... \
+  WEB_ORIGIN=https://<site>.netlify.app API_URL=https://<api>.up.railway.app \
+  NEON_AUTH_BASE_URL=https://<branch>.neonauth.<region>.aws.neon.tech/<database>/auth \
+  DISCO_MAIL_API_KEY=... \
   DISCO_MAIL_FROM_EMAIL='FinePredict <hello@fp.discomedia.co>' STRIPE_API_KEY=... \
   STRIPE_WATCHLIST_PRICE_ID=price_... STRIPE_API_PRICE_ID=price_... \
   STRIPE_WEBHOOK_SECRET=whsec_... STRIPE_API_METER_EVENT_NAME=... \
@@ -223,8 +229,16 @@ railway variable set DATABASE_URL=... OPENAI_API_KEY=... ADMIN_API_KEY=... \
   MONITOR_DRY_RUN=true POLYGON_RPC_URL=...
 
 netlify env:set VITE_API_BASE_URL https://<api>.up.railway.app
+netlify env:set VITE_NEON_AUTH_URL https://<branch>.neonauth.<region>.aws.neon.tech/<database>/auth
 netlify env:set FINEPREDICT_API_BASE_URL https://<api>.up.railway.app
 ```
+
+Enable Neon Auth Magic Link for the production branch, disable unused password
+and OAuth providers, and trust the Netlify origin. After the new API deployment
+is healthy, enable the custom Neon Auth webhook at
+`https://<api>.up.railway.app/api/auth/neon-webhook` for only
+`send.magic_link`. Enabling it earlier causes Neon Auth to skip its built-in
+email and route delivery to an endpoint that may not exist yet.
 
 Create the monitor as a second service connected to the same repository and
 branch. Set its Railway config-file path to `/railway.monitor.json`, share the

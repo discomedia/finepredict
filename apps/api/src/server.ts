@@ -11,6 +11,7 @@ import {
 import { log } from "./log.js";
 import { BillingService } from "./integrations/billing.js";
 import { DiscoMailEmailService } from "./integrations/email.js";
+import { NeonAuthWebhookService } from "./integrations/neon-auth-webhook.js";
 
 const config = loadConfig();
 
@@ -35,11 +36,18 @@ const emailService = new DiscoMailEmailService(
   config.discoMailApiKey,
   config.discoMailFromEmail,
 );
-const authRuntime = createAuthRuntime(config, emailService);
+const authRuntime = createAuthRuntime(
+  config,
+  databaseResources?.database ?? null,
+);
 const app = createApp({
   authRuntime,
   billingService: new BillingService(config),
   config,
+  neonAuthWebhookService: new NeonAuthWebhookService(
+    config.neonAuthBaseUrl,
+    emailService,
+  ),
   ...(databaseResources
     ? { productStore: new ProductStore(databaseResources.database) }
     : {}),
@@ -60,7 +68,7 @@ const server = app.listen(config.port, "0.0.0.0", () => {
 async function shutdown(signal: string): Promise<void> {
   log("server.shutdown", `FinePredict API is shutting down.`, { signal });
   server.close();
-  await Promise.all([databaseResources?.close(), authRuntime?.close()]);
+  await databaseResources?.close();
   process.exit(0);
 }
 

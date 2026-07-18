@@ -1,11 +1,10 @@
-import { betterAuth } from "better-auth";
-import { toNodeHandler } from "better-auth/node";
-import { magicLink } from "better-auth/plugins";
-import type { RequestHandler } from "express";
-import { Pool } from "pg";
+import { eq } from "drizzle-orm";
+import { createRemoteJWKSet, jwtVerify } from "jose";
+import { z } from "zod";
 
 import type { AppConfig } from "./config.js";
-import type { EmailService } from "./integrations/email.js";
+import type { FinePredictDatabase } from "./database/client.js";
+import { authUsers } from "./database/schema.js";
 
 /** Authenticated account details consumed by Express authorization. */
 export interface AuthenticatedUser {
@@ -17,122 +16,92 @@ export interface AuthenticatedUser {
 
 /** Authentication bridge exposed to the HTTP application. */
 export interface AuthRuntime {
-  close(): Promise<void>;
-  getUser(headers: Headers): Promise<AuthenticatedUser | null>;
-  handler: RequestHandler;
+  /**
+   * Resolves one Neon Auth bearer token into a FinePredict account.
+   *
+   * @param authorizationHeader - Incoming Authorization header value.
+   * @returns Authenticated account, or null when the token is absent or invalid.
+   */
+  getUser(
+    authorizationHeader: string | undefined,
+  ): Promise<AuthenticatedUser | null>;
 }
 
+/** UUID claim accepted as a Neon Auth user identifier. */
+const NeonAuthUserIdSchema = z.uuid();
+
 /**
- * Creates Better Auth with Neon persistence and Disco Mail magic links.
+ * Creates a Neon Auth JWT verifier backed by the managed JWKS endpoint.
  *
  * @param config - Validated application configuration.
- * @param emailService - Email delivery adapter used for magic links.
- * @returns Better Auth bridge, or null when database/auth secret is absent.
+ * @param database - Typed database containing the managed Neon Auth schema.
+ * @returns Neon Auth bridge, or null when its required resources are absent.
  */
 export function createAuthRuntime(
   config: AppConfig,
-  emailService: EmailService,
+  database: FinePredictDatabase | null,
 ): AuthRuntime | null {
-  if (!config.databaseUrl || !config.authSecret) {
+  if (!config.neonAuthBaseUrl || !config.neonAuthJwksUrl || !database) {
     return null;
   }
-  const pool = new Pool({
-    connectionString: config.databaseUrl,
-    max: 2,
-    idleTimeoutMillis: 10_000,
-    connectionTimeoutMillis: 10_000,
-  });
-  const auth = betterAuth({
-    appName: "FinePredict",
-    baseURL: config.authUrl,
-    database: pool,
-    databaseHooks: {
-      user: {
-        create: {
-          before: async (user) => ({
-            data: {
-              ...user,
-              role: config.adminEmails.includes(user.email.toLowerCase())
-                ? "admin"
-                : "user",
-            },
-          }),
-        },
-      },
-    },
-    secret: config.authSecret,
-    trustedOrigins: config.webOrigin.split(",").map((origin) => origin.trim()),
-    user: {
-      additionalFields: {
-        role: {
-          defaultValue: "user",
-          input: false,
-          required: true,
-          type: "string",
-        },
-      },
-    },
-    plugins: [
-      magicLink({
-        sendMagicLink: async ({ email, url }) => {
-          await emailService.send({
-            html: `<p>Use this secure link to sign in to FinePredict:</p><p><a href="${escapeHtml(url)}">Sign in to FinePredict</a></p><p>This link expires shortly and can only be used once.</p>`,
-            idempotencyKey: `finepredict-magic-link-${hashForEmailKey(url)}`,
-            subject: "Your FinePredict sign-in link",
-            text: `Sign in to FinePredict: ${url}`,
-            to: email,
-          });
-        },
-      }),
-    ],
-  });
-  const handler = toNodeHandler(auth) as unknown as RequestHandler;
+  const jwks = createRemoteJWKSet(new URL(config.neonAuthJwksUrl));
 
   return {
-    close: async () => {
-      await pool.end();
-    },
-    getUser: async (headers) => {
-      const session = await auth.api.getSession({ headers });
-      if (!session) {
+    getUser: async (authorizationHeader) => {
+      const token = extractBearerToken(authorizationHeader);
+      if (!token) {
         return null;
       }
-      const role = session.user.role === "admin" ? "admin" : "user";
-      return {
-        email: session.user.email,
-        id: session.user.id,
-        name: session.user.name,
-        role,
-      };
+      try {
+        const { payload } = await jwtVerify(token, jwks, {
+          algorithms: ["EdDSA"],
+        });
+        const userId = NeonAuthUserIdSchema.safeParse(payload.sub);
+        if (!userId.success) {
+          return null;
+        }
+        const [user] = await database
+          .select({
+            banned: authUsers.banned,
+            email: authUsers.email,
+            name: authUsers.name,
+            role: authUsers.role,
+          })
+          .from(authUsers)
+          .where(eq(authUsers.id, userId.data))
+          .limit(1);
+        if (!user || user.banned) {
+          return null;
+        }
+        return {
+          email: user.email,
+          id: userId.data,
+          name: user.name,
+          role:
+            user.role === "admin" ||
+            config.adminEmails.includes(user.email.toLowerCase())
+              ? "admin"
+              : "user",
+        };
+      } catch {
+        return null;
+      }
     },
-    handler,
   };
 }
 
 /**
- * Escapes dynamic values before embedding them in a minimal HTML email.
+ * Extracts a case-insensitive Bearer token without accepting other schemes.
  *
- * @param value - Untrusted string.
- * @returns HTML-safe string.
+ * @param authorizationHeader - Raw Authorization header value.
+ * @returns Token string, or null when the header is malformed.
  */
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-/**
- * Creates a non-secret bounded key fragment for Disco Mail idempotency.
- *
- * @param value - Magic-link URL.
- * @returns Stable bounded key fragment.
- */
-function hashForEmailKey(value: string): string {
-  let hash = 0;
-  for (const character of value) {
-    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+function extractBearerToken(
+  authorizationHeader: string | undefined,
+): string | null {
+  if (!authorizationHeader) {
+    return null;
   }
-  return hash.toString(16);
+  const match = /^Bearer\s+(\S+)$/i.exec(authorizationHeader.trim());
+  return match?.[1] ?? null;
 }

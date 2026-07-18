@@ -6,15 +6,16 @@ export interface AppConfig {
   adminApiKey: string;
   adminEmails: string[];
   apiKeyHashSecret: string;
+  apiUrl: string;
   appUrl: string;
-  authSecret: string;
-  authUrl: string;
   databaseUrl: string | null;
   defaultModel: "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-5.6";
   developerApiDailyLimit: number;
   discoMailApiKey: string | null;
   discoMailFromEmail: string;
   monitorDryRun: boolean;
+  neonAuthBaseUrl: string | null;
+  neonAuthJwksUrl: string | null;
   openAiApiKey: string | null;
   polygonRpcUrl: string | null;
   port: number;
@@ -51,6 +52,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     );
   }
 
+  const neonAuthBaseUrl =
+    env.NEON_AUTH_BASE_URL?.trim().replace(/\/$/, "") || null;
+
   return {
     adminApiKey: env.ADMIN_API_KEY?.trim() ?? "",
     adminEmails: (env.ADMIN_EMAILS ?? "")
@@ -58,9 +62,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       .map((email) => email.trim().toLowerCase())
       .filter(Boolean),
     apiKeyHashSecret: env.API_KEY_HASH_SECRET?.trim() ?? "",
+    apiUrl: env.API_URL?.trim() || `http://localhost:${String(port)}`,
     appUrl: env.APP_URL?.trim() || "http://localhost:5173",
-    authSecret: env.BETTER_AUTH_SECRET?.trim() ?? "",
-    authUrl: env.BETTER_AUTH_URL?.trim() || `http://localhost:${String(port)}`,
     databaseUrl: env.DATABASE_URL?.trim() || null,
     defaultModel,
     developerApiDailyLimit,
@@ -69,6 +72,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       env.DISCO_MAIL_FROM_EMAIL?.trim() ||
       "FinePredict <hello@fp.discomedia.co>",
     monitorDryRun: parseBooleanEnvironmentValue(env.MONITOR_DRY_RUN, true),
+    neonAuthBaseUrl,
+    neonAuthJwksUrl: neonAuthBaseUrl
+      ? `${neonAuthBaseUrl}/.well-known/jwks.json`
+      : null,
     openAiApiKey: env.OPENAI_API_KEY?.trim() || null,
     polygonRpcUrl: env.POLYGON_RPC_URL?.trim() || null,
     port,

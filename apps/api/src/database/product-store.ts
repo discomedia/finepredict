@@ -976,7 +976,7 @@ export class ProductStore {
   /**
    * Returns the email address associated with an account.
    *
-   * @param userId - Better Auth user ID.
+   * @param userId - Managed Neon Auth user ID.
    * @returns Account email or null.
    */
   public async getUserEmail(userId: string): Promise<string | null> {

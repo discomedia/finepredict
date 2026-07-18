@@ -5,6 +5,7 @@ import {
   index,
   integer,
   jsonb,
+  pgSchema,
   pgTable,
   text,
   timestamp,
@@ -69,106 +70,33 @@ export const systemSettings = pgTable("system_settings", {
     .defaultNow(),
 });
 
-/** Better Auth user records with a FinePredict authorization role. */
-export const authUsers = pgTable(
-  "user",
-  {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    email: text("email").notNull(),
-    emailVerified: boolean("emailVerified").notNull().default(false),
-    image: text("image"),
-    role: text("role").notNull().default("user"),
-    createdAt: timestamp("createdAt", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updatedAt", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [uniqueIndex("user_email_unique").on(table.email)],
-);
+/** Neon Auth-managed users referenced by FinePredict product records. */
+const neonAuthSchema = pgSchema("neon_auth");
 
-/** Better Auth browser sessions stored in Neon. */
-export const authSessions = pgTable(
-  "session",
-  {
-    id: text("id").primaryKey(),
-    expiresAt: timestamp("expiresAt", { withTimezone: true }).notNull(),
-    token: text("token").notNull(),
-    createdAt: timestamp("createdAt", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updatedAt", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    ipAddress: text("ipAddress"),
-    userAgent: text("userAgent"),
-    userId: text("userId")
-      .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
-  },
-  (table) => [
-    uniqueIndex("session_token_unique").on(table.token),
-    index("session_user_id_idx").on(table.userId),
-  ],
-);
-
-/** Better Auth identity-provider accounts. */
-export const authAccounts = pgTable(
-  "account",
-  {
-    id: text("id").primaryKey(),
-    accountId: text("accountId").notNull(),
-    providerId: text("providerId").notNull(),
-    userId: text("userId")
-      .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
-    accessToken: text("accessToken"),
-    refreshToken: text("refreshToken"),
-    idToken: text("idToken"),
-    accessTokenExpiresAt: timestamp("accessTokenExpiresAt", {
-      withTimezone: true,
-    }),
-    refreshTokenExpiresAt: timestamp("refreshTokenExpiresAt", {
-      withTimezone: true,
-    }),
-    scope: text("scope"),
-    password: text("password"),
-    createdAt: timestamp("createdAt", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updatedAt", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [index("account_user_id_idx").on(table.userId)],
-);
-
-/** Better Auth email-verification and magic-link tokens. */
-export const authVerifications = pgTable(
-  "verification",
-  {
-    id: text("id").primaryKey(),
-    identifier: text("identifier").notNull(),
-    value: text("value").notNull(),
-    expiresAt: timestamp("expiresAt", { withTimezone: true }).notNull(),
-    createdAt: timestamp("createdAt", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updatedAt", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => [index("verification_identifier_idx").on(table.identifier)],
-);
+export const authUsers = neonAuthSchema.table("user", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  emailVerified: boolean("emailVerified").notNull(),
+  image: text("image"),
+  role: text("role"),
+  banned: boolean("banned"),
+  banReason: text("banReason"),
+  banExpires: timestamp("banExpires", { withTimezone: true }),
+  createdAt: timestamp("createdAt", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 /** Stripe-backed subscription entitlement for an account. */
 export const subscriptions = pgTable(
   "subscriptions",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id")
+    userId: uuid("user_id")
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     product: text("product").notNull().default("watchlists"),
@@ -201,7 +129,7 @@ export const watchlists = pgTable(
   "watchlists",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id")
+    userId: uuid("user_id")
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
@@ -307,7 +235,7 @@ export const alertEvents = pgTable(
   "alert_events",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id")
+    userId: uuid("user_id")
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     watchlistMarketId: uuid("watchlist_market_id")
@@ -439,7 +367,7 @@ export const apiKeys = pgTable(
   "api_keys",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id")
+    userId: uuid("user_id")
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
@@ -464,7 +392,7 @@ export const apiUsageDaily = pgTable(
   "api_usage_daily",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id")
+    userId: uuid("user_id")
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     apiKeyId: uuid("api_key_id")
@@ -491,7 +419,7 @@ export const apiUsageFreeMinutes = pgTable(
   "api_usage_free_minutes",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: text("user_id")
+    userId: uuid("user_id")
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     usageMinute: timestamp("usage_minute", { withTimezone: true }).notNull(),
@@ -538,10 +466,7 @@ export const databaseSchema = {
   apiKeys,
   apiUsageDaily,
   apiUsageFreeMinutes,
-  authAccounts,
-  authSessions,
   authUsers,
-  authVerifications,
   disputeCases,
   disputeEvents,
   disputeSources,

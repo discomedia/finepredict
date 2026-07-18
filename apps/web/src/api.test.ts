@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { getNeonAuthToken, requestNeonMagicLink } from "./auth.js";
+
 import {
   createDeveloperApiCheckout,
   getCurrentAccount,
@@ -10,12 +12,20 @@ import {
   updateSettings,
 } from "./api.js";
 
+vi.mock("./auth.js", () => ({
+  getNeonAuthToken: vi.fn(),
+  requestNeonMagicLink: vi.fn(),
+  signOutNeonAccount: vi.fn(),
+}));
+
 afterEach(() => {
+  vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe("authenticated API client", () => {
-  it("sends Better Auth session credentials with account requests", async () => {
+  it("sends a Neon Auth bearer token with account requests", async () => {
+    vi.mocked(getNeonAuthToken).mockResolvedValue("neon-access-token");
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
         user: {
@@ -31,33 +41,22 @@ describe("authenticated API client", () => {
     await expect(getCurrentAccount()).resolves.toMatchObject({
       email: "trader@example.com",
     });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/api/me",
-      expect.objectContaining({ credentials: "include" }),
+    const requestInit = fetchMock.mock.calls[0]?.[1];
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:3001/api/me");
+    expect(new Headers(requestInit?.headers).get("authorization")).toBe(
+      "Bearer neon-access-token",
     );
   });
 
-  it("posts the Better Auth magic-link callback exactly", async () => {
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(Response.json({ status: true }));
-    vi.stubGlobal("fetch", fetchMock);
-
+  it("requests the exact Neon Auth magic-link callback", async () => {
     await requestMagicLink(
       "trader@example.com",
       "https://finepredict.netlify.app/account",
     );
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:3001/api/auth/sign-in/magic-link",
-      expect.objectContaining({
-        body: JSON.stringify({
-          callbackURL: "https://finepredict.netlify.app/account",
-          email: "trader@example.com",
-        }),
-        credentials: "include",
-        method: "POST",
-      }),
+    expect(requestNeonMagicLink).toHaveBeenCalledWith(
+      "trader@example.com",
+      "https://finepredict.netlify.app/account",
     );
   });
 
@@ -71,6 +70,7 @@ describe("authenticated API client", () => {
   });
 
   it("opens separate metered developer API billing", async () => {
+    vi.mocked(getNeonAuthToken).mockResolvedValue("neon-access-token");
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
@@ -81,9 +81,13 @@ describe("authenticated API client", () => {
     await expect(createDeveloperApiCheckout()).resolves.toBe(
       "https://checkout.stripe.com/api-session",
     );
-    expect(fetchMock).toHaveBeenCalledWith(
+    const requestInit = fetchMock.mock.calls[0]?.[1];
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "http://localhost:3001/api/billing/api-checkout",
-      expect.objectContaining({ credentials: "include", method: "POST" }),
+    );
+    expect(requestInit?.method).toBe("POST");
+    expect(new Headers(requestInit?.headers).get("authorization")).toBe(
+      "Bearer neon-access-token",
     );
   });
 
@@ -98,19 +102,35 @@ describe("authenticated API client", () => {
       getMarketStatus("polymarket", "btc market"),
     ).resolves.toBeNull();
     await expect(getRelatedDisputes("btc report")).resolves.toEqual([]);
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "http://localhost:3001/api/markets/polymarket/btc%20market/status",
-      expect.objectContaining({ credentials: "include" }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
       "http://localhost:3001/api/reports/btc%20report/related-disputes",
-      expect.objectContaining({ credentials: "include" }),
-    );
+    ]);
+    expect(getNeonAuthToken).not.toHaveBeenCalled();
   });
 
-  it("updates settings with the administrator cookie and no browser API key", async () => {
+  it("does not attach a bearer token when no Neon session exists", async () => {
+    vi.mocked(getNeonAuthToken).mockResolvedValue(null);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        user: {
+          email: "trader@example.com",
+          id: "user-1",
+          name: "Trader",
+          role: "user",
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getCurrentAccount();
+
+    const requestInit = fetchMock.mock.calls[0]?.[1];
+    expect(new Headers(requestInit?.headers).has("authorization")).toBe(false);
+  });
+
+  it("updates settings with the administrator bearer token", async () => {
+    vi.mocked(getNeonAuthToken).mockResolvedValue("neon-admin-token");
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
         availableModels: ["gpt-5.6-luna"],
@@ -120,13 +140,16 @@ describe("authenticated API client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await updateSettings("gpt-5.6-luna");
-    expect(fetchMock).toHaveBeenCalledWith(
+    const requestInit = fetchMock.mock.calls[0]?.[1];
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "http://localhost:3001/api/settings",
-      expect.objectContaining({
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        method: "PUT",
-      }),
+    );
+    expect(requestInit?.method).toBe("PUT");
+    expect(new Headers(requestInit?.headers).get("authorization")).toBe(
+      "Bearer neon-admin-token",
+    );
+    expect(new Headers(requestInit?.headers).get("content-type")).toBe(
+      "application/json",
     );
   });
 });

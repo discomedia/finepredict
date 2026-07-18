@@ -22,8 +22,8 @@ if (!databaseUrl) {
   );
 }
 const resources = createDatabaseResources(databaseUrl);
-const userId = `integration-${crypto.randomUUID()}`;
-const freeUserId = `integration-free-${crypto.randomUUID()}`;
+const userId = crypto.randomUUID();
+const freeUserId = crypto.randomUUID();
 const externalId = `integration-market-${crypto.randomUUID()}`;
 const stripeCustomerId = `cus_${crypto.randomUUID().replaceAll("-", "")}`;
 
@@ -40,11 +40,13 @@ describe("Neon product persistence", () => {
     await resources.database.insert(authUsers).values([
       {
         email: `${userId}@example.com`,
+        emailVerified: true,
         id: userId,
         name: "Integration User",
       },
       {
         email: `${freeUserId}@example.com`,
+        emailVerified: true,
         id: freeUserId,
         name: "Free Integration User",
       },

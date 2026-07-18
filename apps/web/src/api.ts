@@ -27,6 +27,12 @@ import {
 } from "@finepredict/shared";
 import { z } from "zod";
 
+import {
+  getNeonAuthToken,
+  requestNeonMagicLink,
+  signOutNeonAccount,
+} from "./auth.js";
+
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001"
 ).replace(/\/$/, "");
@@ -240,7 +246,7 @@ export async function reviewAdminDispute(
 }
 
 /**
- * Requests a one-time Better Auth sign-in link.
+ * Requests a one-time managed Neon Auth sign-in link.
  *
  * @param email - Account email address.
  * @param callbackUrl - FinePredict URL opened after authentication.
@@ -250,24 +256,20 @@ export async function requestMagicLink(
   email: string,
   callbackUrl: string,
 ): Promise<void> {
-  await requestJson("/api/auth/sign-in/magic-link", {
-    body: JSON.stringify({ callbackURL: callbackUrl, email }),
-    headers: { "Content-Type": "application/json" },
-    method: "POST",
-  });
+  await requestNeonMagicLink(email, callbackUrl);
 }
 
 /**
- * Ends the current Better Auth session.
+ * Ends the current managed Neon Auth session.
  *
- * @returns Promise resolved after the session cookie is cleared.
+ * @returns Promise resolved after the managed browser session ends.
  */
 export async function signOutAccount(): Promise<void> {
-  await requestJson("/api/auth/sign-out", { method: "POST" });
+  await signOutNeonAccount();
 }
 
 /**
- * Loads the current Better Auth account.
+ * Loads the current Neon Auth account.
  *
  * @returns Authenticated account details.
  */
@@ -541,9 +543,16 @@ export function getPublicApiUrl(path: string): string {
  * @returns Parsed JSON response.
  */
 async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
+  const headers = new Headers(init?.headers);
+  if (requiresAccountToken(path, init?.method)) {
+    const token = await getNeonAuthToken();
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+  }
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    credentials: "include",
+    headers,
   });
   const payload: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -557,4 +566,23 @@ async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
     throw new ApiRequestError(message, response.status);
   }
   return payload;
+}
+
+/**
+ * Identifies API routes that require a managed Neon Auth JWT.
+ *
+ * @param path - API path relative to the backend.
+ * @param method - Optional request method.
+ * @returns True when the request should carry an account token.
+ */
+function requiresAccountToken(
+  path: string,
+  method: string | undefined,
+): boolean {
+  return (
+    path.startsWith("/api/me") ||
+    path.startsWith("/api/billing") ||
+    path.startsWith("/api/admin") ||
+    (path === "/api/settings" && (method ?? "GET") !== "GET")
+  );
 }

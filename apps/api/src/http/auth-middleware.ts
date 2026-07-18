@@ -1,6 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
 
-import { fromNodeHeaders } from "better-auth/node";
 import type { NextFunction, Request, Response } from "express";
 
 import type { AuthRuntime, AuthenticatedUser } from "../auth.js";
@@ -11,9 +10,9 @@ export interface FinePredictLocals {
 }
 
 /**
- * Requires a Better Auth session and exposes its user through response locals.
+ * Requires a Neon Auth JWT and exposes its user through response locals.
  *
- * @param authRuntime - Configured Better Auth bridge, or null when disabled.
+ * @param authRuntime - Configured Neon Auth bridge, or null when disabled.
  * @returns Express middleware enforcing authentication.
  */
 export function requireAuthenticatedUser(
@@ -31,7 +30,7 @@ export function requireAuthenticatedUser(
       return;
     }
     try {
-      const user = await authRuntime.getUser(fromNodeHeaders(request.headers));
+      const user = await authRuntime.getUser(request.header("authorization"));
       if (!user) {
         response.status(401).json({ error: `Sign in is required.` });
         return;
@@ -48,7 +47,7 @@ export function requireAuthenticatedUser(
  * Checks either an authenticated administrator or emergency automation key.
  *
  * @param request - Incoming Express request.
- * @param authRuntime - Configured Better Auth bridge.
+ * @param authRuntime - Configured Neon Auth bridge.
  * @param expectedEmergencyKey - Server-only automation key.
  * @returns True only for an authorized administrator.
  */
@@ -58,7 +57,7 @@ export async function isAdministratorRequest(
   expectedEmergencyKey: string,
 ): Promise<boolean> {
   if (authRuntime) {
-    const user = await authRuntime.getUser(fromNodeHeaders(request.headers));
+    const user = await authRuntime.getUser(request.header("authorization"));
     if (user?.role === "admin") {
       return true;
     }

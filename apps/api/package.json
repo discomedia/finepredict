@@ -20,12 +20,12 @@
   "dependencies": {
     "@discomedia/utils": "1.0.79",
     "@finepredict/shared": "workspace:*",
-    "better-auth": "^1.6.23",
     "cors": "^2.8.5",
     "diff": "^8.0.2",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.2",
     "express": "^5.1.0",
+    "jose": "^6.2.3",
     "pg": "^8.22.0",
     "postgres": "^3.4.7",
     "stripe": "^22.3.2",

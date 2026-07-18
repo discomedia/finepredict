@@ -20,6 +20,10 @@ import { createOpenApiDocument } from "./developer-api/openapi.js";
 import { createProductRouter } from "./http/product-routes.js";
 import { isAdministratorRequest } from "./http/auth-middleware.js";
 import type { BillingService } from "./integrations/billing.js";
+import {
+  NeonAuthWebhookVerificationError,
+  type NeonAuthWebhookService,
+} from "./integrations/neon-auth-webhook.js";
 import { log } from "./log.js";
 import { UnsupportedMarketUrlError } from "./markets/platform.js";
 import { ReportService } from "./report-service.js";
@@ -30,6 +34,7 @@ export interface CreateAppDependencies {
   billingService?: BillingService;
   config: AppConfig;
   fetchImplementation?: typeof fetch;
+  neonAuthWebhookService?: NeonAuthWebhookService;
   productStore?: ProductStore;
   store: ReportStore;
 }
@@ -53,15 +58,36 @@ export function createApp(dependencies: CreateAppDependencies): Express {
     }),
   );
 
-  if (dependencies.authRuntime) {
-    app.all("/api/auth/*splat", dependencies.authRuntime.handler);
-  } else {
-    app.all("/api/auth/*splat", (_request, response) => {
-      response.status(503).json({
-        error: `Account access is not configured on this deployment.`,
-      });
-    });
-  }
+  app.post(
+    "/api/auth/neon-webhook",
+    express.raw({ type: "application/json", limit: "32kb" }),
+    async (request, response, next) => {
+      const webhookService = dependencies.neonAuthWebhookService;
+      if (!webhookService?.configured) {
+        response.status(503).json({ error: `Neon Auth is not configured.` });
+        return;
+      }
+      try {
+        const body = Buffer.isBuffer(request.body)
+          ? request.body
+          : Buffer.from("");
+        await webhookService.deliverMagicLink(body, {
+          eventId: request.header("x-neon-event-id"),
+          eventType: request.header("x-neon-event-type"),
+          keyId: request.header("x-neon-signature-kid"),
+          signature: request.header("x-neon-signature"),
+          timestamp: request.header("x-neon-timestamp"),
+        });
+        response.json({ delivered: true });
+      } catch (error) {
+        if (error instanceof NeonAuthWebhookVerificationError) {
+          response.status(401).json({ error: error.message });
+          return;
+        }
+        next(error);
+      }
+    },
+  );
 
   app.post(
     "/api/billing/webhook",
@@ -120,7 +146,7 @@ export function createApp(dependencies: CreateAppDependencies): Express {
   });
 
   app.get("/api/openapi.json", (_request, response) => {
-    response.json(createOpenApiDocument(dependencies.config.authUrl));
+    response.json(createOpenApiDocument(dependencies.config.apiUrl));
   });
 
   app.get("/api/reports", async (_request, response, next) => {
