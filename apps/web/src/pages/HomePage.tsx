@@ -226,7 +226,7 @@ export function HomePage() {
             {searchTerm.trim().length > 0 &&
             searchTerm.trim().length < MINIMUM_MARKET_SEARCH_LENGTH
               ? `Enter at least ${MINIMUM_MARKET_SEARCH_LENGTH} characters to search.`
-              : "Results are ranked by keyword match."}
+              : "Results balance keyword match, market activity and variety."}
           </div>
 
           {searchTerm.trim().length >= MINIMUM_MARKET_SEARCH_LENGTH ? (

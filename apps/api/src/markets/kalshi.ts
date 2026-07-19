@@ -93,11 +93,13 @@ export async function fetchKalshiContract(
 /**
  * Extracts potential Kalshi API tickers from a public market URL.
  *
- * Kalshi's current routes can include a series ticker immediately after
- * `/markets/` and an event or market ticker as the final path segment.
+ * Kalshi's current routes can include an exact market ticker in a query
+ * parameter, a series ticker immediately after `/markets/`, and an event or
+ * market ticker elsewhere in the remaining path. Decimal strike tickers are
+ * valid and must retain their period characters.
  *
  * @param url - Parsed public Kalshi market URL.
- * @returns Unique API ticker candidates, with the terminal ticker first.
+ * @returns Unique API ticker candidates, with explicit market tickers first.
  */
 function extractKalshiTickers(url: URL): string[] {
   const segments = url.pathname.split("/").filter(Boolean);
@@ -105,12 +107,17 @@ function extractKalshiTickers(url: URL): string[] {
     (segment) => segment.toLowerCase() === "markets",
   );
   const pathAfterMarkets = segments.slice(marketsIndex + 1);
+  const explicitTickerCandidates = [
+    url.searchParams.get("market_ticker"),
+    url.searchParams.get("ticker"),
+    url.searchParams.get("market"),
+  ];
   const tickerCandidates = [
-    pathAfterMarkets.at(-1),
-    pathAfterMarkets[0],
+    ...explicitTickerCandidates,
+    ...[...pathAfterMarkets].reverse(),
   ].filter(
     (segment): segment is string =>
-      typeof segment === "string" && /^kx[\w-]*$/i.test(segment),
+      typeof segment === "string" && /^kx[a-z0-9_.-]*$/i.test(segment),
   );
   const tickers = [
     ...new Set(tickerCandidates.map((ticker) => ticker.toUpperCase())),

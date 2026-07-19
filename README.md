@@ -7,7 +7,7 @@ It deliberately does not create a pseudo-precise risk score. Reports show specif
 ## Product surface
 
 - One- or two-market reports from public Polymarket and Kalshi URLs
-- Debounced cross-venue market search with ranked Oddpool results
+- Debounced cross-venue market search ranked by relevance, activity, and event variety
 - Plain-English settlement summaries with verbatim supporting quotes
 - 18 deterministic wording and consistency checks
 - Optional structured explanations through `@discomedia/utils` and `gpt-5.6-luna`
@@ -38,7 +38,7 @@ Polygon RPC     Optional Polymarket on-chain dispute evidence
 Oddpool         Full-text Polymarket and Kalshi market discovery
 ```
 
-Full-text discovery uses [Oddpool market search](https://docs.oddpool.com/search/search-markets), while contract extraction uses the documented public [Polymarket Gamma API](https://docs.polymarket.com/market-data/fetching-markets) and [Kalshi Get Market API](https://docs.kalshi.com/api-reference/market/get-market). Trading credentials are not required for read-only contract extraction.
+Full-text discovery uses [Oddpool market search](https://docs.oddpool.com/search/search-markets). FinePredict reranks the returned relevance candidates using text coverage, title/event specificity, logarithmic volume and liquidity, and event diversity. It enriches Kalshi candidates through one public [Kalshi Get Markets API](https://docs.kalshi.com/api-reference/market/get-markets) batch request. Contract extraction uses the documented public [Polymarket Gamma API](https://docs.polymarket.com/market-data/fetching-markets) and [Kalshi Get Market API](https://docs.kalshi.com/api-reference/market/get-market). Trading credentials are not required for read-only discovery or extraction.
 
 ## Local development
 
@@ -153,6 +153,12 @@ To verify Oddpool discovery through the local API without exposing its key:
 curl 'http://localhost:3001/api/markets/search?platform=polymarket&query=bitcoin'
 curl 'http://localhost:3001/api/markets/search?platform=kalshi&query=bitcoin'
 ```
+
+Search results merge Oddpool's top 50 relevance candidates with its top 50 by
+volume, then rank locally so all query terms dominate activity signals. Volume
+and liquidity are logarithmic tie-breakers, and repeated outcomes from one event
+receive a diversity penalty. Kalshi's public batch endpoint supplies the
+specific outcome label shown as each result title.
 
 ## API
 
