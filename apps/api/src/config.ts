@@ -17,6 +17,7 @@ export interface AppConfig {
   neonAuthBaseUrl: string | null;
   neonAuthJwksUrl: string | null;
   openAiApiKey: string | null;
+  oddpoolApiKey: string | null;
   polygonRpcUrl: string | null;
   port: number;
   stripeApiMeterEventName: string | null;
@@ -77,6 +78,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       ? `${neonAuthBaseUrl}/.well-known/jwks.json`
       : null,
     openAiApiKey: env.OPENAI_API_KEY?.trim() || null,
+    oddpoolApiKey: env.ODDPOOL_API_KEY?.trim() || null,
     polygonRpcUrl: env.POLYGON_RPC_URL?.trim() || null,
     port,
     stripeApiMeterEventName: env.STRIPE_API_METER_EVENT_NAME?.trim() || null,

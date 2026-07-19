@@ -7,6 +7,7 @@ It deliberately does not create a pseudo-precise risk score. Reports show specif
 ## Product surface
 
 - One- or two-market reports from public Polymarket and Kalshi URLs
+- Debounced cross-venue market search with ranked Oddpool results
 - Plain-English settlement summaries with verbatim supporting quotes
 - 18 deterministic wording and consistency checks
 - Optional structured explanations through `@discomedia/utils` and `gpt-5.6-luna`
@@ -34,9 +35,10 @@ Neon            Postgres product data and managed authentication
 Disco Mail      Magic-link and watchlist-alert email delivery
 Stripe          Watchlist subscriptions and metered developer API billing
 Polygon RPC     Optional Polymarket on-chain dispute evidence
+Oddpool         Full-text Polymarket and Kalshi market discovery
 ```
 
-Market discovery uses the documented public [Polymarket Gamma API](https://docs.polymarket.com/market-data/fetching-markets) and [Kalshi Get Market API](https://docs.kalshi.com/api-reference/market/get-market). Trading credentials are not required for read-only contract extraction.
+Full-text discovery uses [Oddpool market search](https://docs.oddpool.com/search/search-markets), while contract extraction uses the documented public [Polymarket Gamma API](https://docs.polymarket.com/market-data/fetching-markets) and [Kalshi Get Market API](https://docs.kalshi.com/api-reference/market/get-market). Trading credentials are not required for read-only contract extraction.
 
 ## Local development
 
@@ -59,6 +61,7 @@ package-level env files.
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `DATABASE_URL`                | Pooled Neon Postgres connection string. Without it, public reports use non-persistent memory storage and account/product routes are unavailable. |
 | `OPENAI_API_KEY`              | Enables LLM explanations. Deterministic analysis still works without it.                                                                         |
+| `ODDPOOL_API_KEY`             | Server-only credential for homepage Polymarket and Kalshi full-text search.                                                                      |
 | `FINEPREDICT_MODEL`           | Server default model; defaults to `gpt-5.6-luna`.                                                                                                |
 | `ADMIN_API_KEY`               | Emergency server-side key accepted through `x-admin-api-key` for settings and dispute administration.                                            |
 | `ADMIN_EMAILS`                | Comma-separated email addresses treated as administrators after Neon Auth verifies their identity.                                               |
@@ -144,19 +147,27 @@ curl -X POST http://localhost:3001/api/reports \
   --data '{"urls":["https://polymarket.com/event/<slug>"]}'
 ```
 
+To verify Oddpool discovery through the local API without exposing its key:
+
+```bash
+curl 'http://localhost:3001/api/markets/search?platform=polymarket&query=bitcoin'
+curl 'http://localhost:3001/api/markets/search?platform=kalshi&query=bitcoin'
+```
+
 ## API
 
 All report reads are public in the MVP.
 
-| Method | Path                 | Purpose                                                      |
-| ------ | -------------------- | ------------------------------------------------------------ |
-| `GET`  | `/api/health/live`   | Database-free Railway liveness check                         |
-| `GET`  | `/api/meta`          | Supported platforms and deterministic-check count            |
-| `POST` | `/api/reports`       | Create a report from `{ "urls": ["..."] }`                   |
-| `GET`  | `/api/reports`       | List recent public reports                                   |
-| `GET`  | `/api/reports/:slug` | Fetch a permanent report                                     |
-| `GET`  | `/api/settings`      | Read the active model and allowed choices                    |
-| `PUT`  | `/api/settings`      | Update the model; requires an admin session or emergency key |
+| Method | Path                  | Purpose                                                      |
+| ------ | --------------------- | ------------------------------------------------------------ |
+| `GET`  | `/api/health/live`    | Database-free Railway liveness check                         |
+| `GET`  | `/api/meta`           | Supported platforms and deterministic-check count            |
+| `GET`  | `/api/markets/search` | Search one venue with `platform` and `query`                 |
+| `POST` | `/api/reports`        | Create a report from `{ "urls": ["..."] }`                   |
+| `GET`  | `/api/reports`        | List recent public reports                                   |
+| `GET`  | `/api/reports/:slug`  | Fetch a permanent report                                     |
+| `GET`  | `/api/settings`       | Read the active model and allowed choices                    |
+| `PUT`  | `/api/settings`       | Update the model; requires an admin session or emergency key |
 
 Account, watchlist, billing, dispute, and developer routes are documented by
 the generated OpenAPI document at `GET /api/openapi.json`. Developer clients use
@@ -216,7 +227,7 @@ market once, closes its database clients, and exits.
 Set production variables through the platform CLIs rather than committing `.env`:
 
 ```bash
-railway variable set DATABASE_URL=... OPENAI_API_KEY=... ADMIN_API_KEY=... \
+railway variable set DATABASE_URL=... OPENAI_API_KEY=... ODDPOOL_API_KEY=... ADMIN_API_KEY=... \
   ADMIN_EMAILS=admin@example.com \
   FINEPREDICT_MODEL=gpt-5.6-luna APP_URL=https://<site>.netlify.app \
   WEB_ORIGIN=https://<site>.netlify.app API_URL=https://<api>.up.railway.app \

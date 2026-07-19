@@ -1,6 +1,7 @@
 import {
   CreateReportRequestSchema,
   FinePredictModelSchema,
+  MarketSearchQuerySchema,
   UpdateSettingsRequestSchema,
 } from "@finepredict/shared";
 import cors from "cors";
@@ -26,6 +27,10 @@ import {
 } from "./integrations/neon-auth-webhook.js";
 import { log } from "./log.js";
 import { UnsupportedMarketUrlError } from "./markets/platform.js";
+import {
+  MarketSearchService,
+  MarketSearchUnavailableError,
+} from "./markets/search.js";
 import { ReportService } from "./report-service.js";
 
 /** Dependencies used to construct the HTTP application. */
@@ -48,6 +53,10 @@ export interface CreateAppDependencies {
 export function createApp(dependencies: CreateAppDependencies): Express {
   const app = express();
   const reportService = new ReportService(dependencies);
+  const marketSearchService = new MarketSearchService(
+    dependencies.config.oddpoolApiKey,
+    dependencies.fetchImplementation,
+  );
   app.disable("x-powered-by");
   app.use(
     cors({
@@ -152,6 +161,17 @@ export function createApp(dependencies: CreateAppDependencies): Express {
   app.get("/api/reports", async (_request, response, next) => {
     try {
       response.json({ reports: await reportService.listRecentReports() });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/markets/search", async (request, response, next) => {
+    try {
+      const input = MarketSearchQuerySchema.parse(request.query);
+      response.json(
+        await marketSearchService.search(input.platform, input.query),
+      );
     } catch (error) {
       next(error);
     }
@@ -299,6 +319,10 @@ export function createApp(dependencies: CreateAppDependencies): Express {
       }
       if (error instanceof UnsupportedMarketUrlError) {
         response.status(400).json({ error: error.message });
+        return;
+      }
+      if (error instanceof MarketSearchUnavailableError) {
+        response.status(error.status).json({ error: error.message });
         return;
       }
       if (error instanceof ProductAccessError) {

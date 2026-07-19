@@ -63,11 +63,12 @@ export async function fetchPolymarketContract(
   fetchImplementation: typeof fetch = fetch,
 ): Promise<MarketContract> {
   const url = new URL(marketUrl);
-  const slug = extractPathValue(url, "event");
-  const encodedSlug = encodeURIComponent(slug);
+  const eventSlug = extractPathValue(url, "event");
+  const marketSlug = extractNestedMarketSlug(url);
+  const encodedMarketSlug = encodeURIComponent(marketSlug ?? eventSlug);
 
   const marketResponse = await tryFetchJson(
-    `https://gamma-api.polymarket.com/markets/slug/${encodedSlug}`,
+    `https://gamma-api.polymarket.com/markets/slug/${encodedMarketSlug}`,
     fetchImplementation,
   );
   if (marketResponse !== null) {
@@ -76,12 +77,26 @@ export async function fetchPolymarketContract(
   }
 
   const eventResponse = await fetchJson(
-    `https://gamma-api.polymarket.com/events/slug/${encodedSlug}`,
+    `https://gamma-api.polymarket.com/events/slug/${encodeURIComponent(eventSlug)}`,
     "Polymarket Gamma API",
     fetchImplementation,
   );
   const event = PolymarketEventSchema.parse(eventResponse);
   return normalizePolymarketEvent(event, marketUrl);
+}
+
+/**
+ * Reads a child-market slug from Polymarket's event/market nested route.
+ *
+ * @param url - Parsed public Polymarket URL.
+ * @returns Child-market slug or null for an event-only route.
+ */
+function extractNestedMarketSlug(url: URL): string | null {
+  const segments = url.pathname.split("/").filter(Boolean);
+  const eventIndex = segments.findIndex(
+    (segment) => segment.toLowerCase() === "event",
+  );
+  return segments[eventIndex + 2]?.trim() || null;
 }
 
 /**

@@ -9,6 +9,7 @@ import {
   getRelatedDisputes,
   listWatchlists,
   requestMagicLink,
+  searchMarkets,
   updateSettings,
 } from "./api.js";
 
@@ -106,6 +107,32 @@ describe("authenticated API client", () => {
       "http://localhost:3001/api/markets/polymarket/btc%20market/status",
       "http://localhost:3001/api/reports/btc%20report/related-disputes",
     ]);
+    expect(getNeonAuthToken).not.toHaveBeenCalled();
+  });
+
+  it("searches one venue with an encoded public query", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        platform: "kalshi",
+        query: "Fed rates",
+        results: [
+          {
+            endDate: null,
+            externalId: "KXFED-26JUL-H0",
+            platform: "kalshi",
+            subtitle: "Fed decision",
+            title: "Will the Fed hold rates?",
+            url: "https://kalshi.com/markets/kxfed/fed-decision/kxfed-26jul-h0",
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchMarkets("kalshi", "Fed rates")).resolves.toHaveLength(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://localhost:3001/api/markets/search?platform=kalshi&query=Fed+rates",
+    );
     expect(getNeonAuthToken).not.toHaveBeenCalled();
   });
 

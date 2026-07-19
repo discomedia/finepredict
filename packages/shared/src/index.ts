@@ -6,6 +6,38 @@ export const MarketPlatformSchema = z.enum(["polymarket", "kalshi"]);
 /** Supported prediction-market platform. */
 export type MarketPlatform = z.infer<typeof MarketPlatformSchema>;
 
+/** Search query accepted by public market discovery. */
+export const MarketSearchQuerySchema = z.object({
+  platform: MarketPlatformSchema,
+  query: z.string().trim().min(3).max(80),
+});
+
+/** Validated public market-search query. */
+export type MarketSearchQuery = z.infer<typeof MarketSearchQuerySchema>;
+
+/** One ranked, selectable market returned by public discovery. */
+export const MarketSearchResultSchema = z.object({
+  platform: MarketPlatformSchema,
+  externalId: z.string().min(1),
+  title: z.string().min(1),
+  subtitle: z.string().nullable(),
+  url: z.url(),
+  endDate: z.string().datetime().nullable(),
+});
+
+/** Ranked market match suitable for prefilling a comparison URL. */
+export type MarketSearchResult = z.infer<typeof MarketSearchResultSchema>;
+
+/** Public response containing ranked matches from one venue. */
+export const MarketSearchResponseSchema = z.object({
+  platform: MarketPlatformSchema,
+  query: z.string().min(3),
+  results: z.array(MarketSearchResultSchema),
+});
+
+/** Ranked market-search response from one venue. */
+export type MarketSearchResponse = z.infer<typeof MarketSearchResponseSchema>;
+
 /** FinePredict model choices exposed to administrators. */
 export const FinePredictModelSchema = z.enum([
   "gpt-5.6-luna",

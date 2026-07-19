@@ -4,6 +4,7 @@ import {
   CreateReportRequestSchema,
   FinePredictModelSchema,
   MarketPlatformSchema,
+  MarketSearchQuerySchema,
 } from "./index.js";
 
 describe("shared schemas", () => {
@@ -19,5 +20,17 @@ describe("shared schemas", () => {
       }).urls,
     ).toHaveLength(1);
     expect(() => CreateReportRequestSchema.parse({ urls: [] })).toThrow();
+  });
+
+  it("requires at least three trimmed search characters", () => {
+    expect(
+      MarketSearchQuerySchema.parse({
+        platform: "kalshi",
+        query: "  Fed rates  ",
+      }).query,
+    ).toBe("Fed rates");
+    expect(() =>
+      MarketSearchQuerySchema.parse({ platform: "kalshi", query: "Fe" }),
+    ).toThrow();
   });
 });

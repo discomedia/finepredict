@@ -1,8 +1,37 @@
-import { ArrowRight, Link2 } from "lucide-react";
+import type { MarketPlatform, MarketSearchResult } from "@finepredict/shared";
+import { ArrowRight, Link2, Search } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
-import { createReport, listRecentReports, type RecentReport } from "../api.js";
+import {
+  createReport,
+  listRecentReports,
+  searchMarkets,
+  type RecentReport,
+} from "../api.js";
+
+/** Loading lifecycle for one venue's dynamic result list. */
+type MarketSearchStatus = "idle" | "loading" | "success" | "error";
+
+/** Dynamic search state retained independently for each venue. */
+interface PlatformSearchState {
+  error: string | null;
+  results: MarketSearchResult[];
+  status: MarketSearchStatus;
+}
+
+/** Empty venue state used before a valid search term is entered. */
+const EMPTY_PLATFORM_SEARCH_STATE: PlatformSearchState = {
+  error: null,
+  results: [],
+  status: "idle",
+};
+
+/** Minimum trimmed query length accepted by market search. */
+const MINIMUM_MARKET_SEARCH_LENGTH = 3;
+
+/** Delay after typing before venue searches begin. */
+const MARKET_SEARCH_DEBOUNCE_MILLISECONDS = 400;
 
 /** FinePredict home page with primary market-analysis workflow. */
 export function HomePage() {
@@ -12,7 +41,13 @@ export function HomePage() {
     new URLSearchParams(location.search).get("marketUrl") ?? "",
     "",
   ]);
-  const [compareMode, setCompareMode] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [searchState, setSearchState] = useState<
+    Record<MarketPlatform, PlatformSearchState>
+  >({
+    kalshi: EMPTY_PLATFORM_SEARCH_STATE,
+    polymarket: EMPTY_PLATFORM_SEARCH_STATE,
+  });
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
@@ -35,6 +70,56 @@ export function HomePage() {
     };
   }, []);
 
+  useEffect(() => {
+    const query = searchTerm.trim();
+    if (query.length < MINIMUM_MARKET_SEARCH_LENGTH) {
+      setSearchState({
+        kalshi: EMPTY_PLATFORM_SEARCH_STATE,
+        polymarket: EMPTY_PLATFORM_SEARCH_STATE,
+      });
+      return;
+    }
+    const controller = new AbortController();
+    setSearchState({
+      kalshi: { error: null, results: [], status: "loading" },
+      polymarket: { error: null, results: [], status: "loading" },
+    });
+    const timeout = window.setTimeout(() => {
+      for (const platform of ["polymarket", "kalshi"] as const) {
+        void searchMarkets(platform, query, controller.signal)
+          .then((results) => {
+            setSearchState((current) => ({
+              ...current,
+              [platform]: { error: null, results, status: "success" },
+            }));
+          })
+          .catch((caughtError: unknown) => {
+            if (
+              caughtError instanceof DOMException &&
+              caughtError.name === "AbortError"
+            ) {
+              return;
+            }
+            setSearchState((current) => ({
+              ...current,
+              [platform]: {
+                error:
+                  caughtError instanceof Error
+                    ? caughtError.message
+                    : `FinePredict could not search ${platform}.`,
+                results: [],
+                status: "error",
+              },
+            }));
+          });
+      }
+    }, MARKET_SEARCH_DEBOUNCE_MILLISECONDS);
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [searchTerm]);
+
   /**
    * Creates a report and navigates directly to its permanent share page.
    *
@@ -43,16 +128,9 @@ export function HomePage() {
    */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const submittedUrls = urls
-      .slice(0, compareMode ? 2 : 1)
-      .map((url) => url.trim())
-      .filter(Boolean);
-    if (submittedUrls.length !== (compareMode ? 2 : 1)) {
-      setError(
-        compareMode
-          ? "Paste both market URLs to compare their contracts."
-          : "Paste a Polymarket or Kalshi market URL.",
-      );
+    const submittedUrls = urls.map((url) => url.trim()).filter(Boolean);
+    if (submittedUrls.length !== 2) {
+      setError("Choose or paste both market URLs to compare their contracts.");
       return;
     }
     setError(null);
@@ -86,6 +164,18 @@ export function HomePage() {
     );
   }
 
+  /**
+   * Places a selected result into the URL field aligned with its venue.
+   *
+   * @param result - Ranked venue result selected by the user.
+   * @returns Nothing.
+   */
+  function selectMarket(result: MarketSearchResult): void {
+    const index = result.platform === "polymarket" ? 0 : 1;
+    updateUrl(index, result.url);
+    setError(null);
+  }
+
   return (
     <>
       <section className="hero">
@@ -115,23 +205,65 @@ export function HomePage() {
             <span className="card-kicker">New analysis</span>
             <span className="terminal-code">FP / 01</span>
           </div>
-          <h2>Market URL</h2>
-          <p>Paste a current Polymarket or Kalshi contract.</p>
-          <label htmlFor="market-url-1">Primary contract</label>
-          <div className="url-input-wrap">
-            <Link2 size={18} aria-hidden="true" />
+          <h2>Find matching markets</h2>
+          <p>
+            Search by topic, event, person or outcome, then choose one result
+            from each venue.
+          </p>
+          <label htmlFor="market-search">Search markets</label>
+          <div className="market-search-input-wrap">
+            <Search size={19} aria-hidden="true" />
             <input
-              id="market-url-1"
-              type="url"
-              value={urls[0]}
-              onChange={(event) => updateUrl(0, event.target.value)}
-              placeholder="https://polymarket.com/event/…"
-              autoComplete="url"
+              id="market-search"
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Try “Bitcoin”, “Fed rates” or “World Cup”"
+              autoComplete="off"
             />
           </div>
-          {compareMode ? (
-            <>
-              <label htmlFor="market-url-2">Comparison contract</label>
+          <div className="search-minimum-note" aria-live="polite">
+            {searchTerm.trim().length > 0 &&
+            searchTerm.trim().length < MINIMUM_MARKET_SEARCH_LENGTH
+              ? `Enter at least ${MINIMUM_MARKET_SEARCH_LENGTH} characters to search.`
+              : "Results are ranked by keyword match."}
+          </div>
+
+          {searchTerm.trim().length >= MINIMUM_MARKET_SEARCH_LENGTH ? (
+            <div className="market-search-results">
+              {(["polymarket", "kalshi"] as const).map((platform) => (
+                <MarketResultList
+                  key={platform}
+                  platform={platform}
+                  selectedUrl={urls[platform === "polymarket" ? 0 : 1] ?? ""}
+                  state={searchState[platform]}
+                  onSelect={selectMarket}
+                />
+              ))}
+            </div>
+          ) : null}
+
+          <div className="selected-market-heading">
+            <span>Selected markets</span>
+            <span>Or paste URLs manually</span>
+          </div>
+          <div className="market-url-grid">
+            <div>
+              <label htmlFor="market-url-1">Polymarket URL</label>
+              <div className="url-input-wrap">
+                <Link2 size={18} aria-hidden="true" />
+                <input
+                  id="market-url-1"
+                  type="url"
+                  value={urls[0]}
+                  onChange={(event) => updateUrl(0, event.target.value)}
+                  placeholder="https://polymarket.com/event/…"
+                  autoComplete="url"
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="market-url-2">Kalshi URL</label>
               <div className="url-input-wrap">
                 <Link2 size={18} aria-hidden="true" />
                 <input
@@ -143,24 +275,15 @@ export function HomePage() {
                   autoComplete="url"
                 />
               </div>
-            </>
-          ) : null}
-          <button
-            className="compare-toggle"
-            type="button"
-            onClick={() => setCompareMode((current) => !current)}
-          >
-            {compareMode
-              ? "Analyze one market instead"
-              : "+ Compare with another market"}
-          </button>
+            </div>
+          </div>
           {error ? <div className="form-error">{error}</div> : null}
           <button
             className="primary-button"
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || urls.some((url) => !url.trim())}
           >
-            {isSubmitting ? "Reading the contracts…" : "Analyze fine print"}
+            {isSubmitting ? "Reading the contracts…" : "Compare market rules"}
             {!isSubmitting ? <ArrowRight size={18} /> : null}
           </button>
           <p className="analysis-note">
@@ -212,5 +335,66 @@ export function HomePage() {
         )}
       </section>
     </>
+  );
+}
+
+/** Properties for one venue's dynamic result list. */
+interface MarketResultListProperties {
+  onSelect: (result: MarketSearchResult) => void;
+  platform: MarketPlatform;
+  selectedUrl: string;
+  state: PlatformSearchState;
+}
+
+/**
+ * Renders independently loading, ranked results for one venue.
+ *
+ * @param properties - Venue state, selected URL, and selection callback.
+ * @returns Accessible dynamic market result list.
+ */
+function MarketResultList({
+  onSelect,
+  platform,
+  selectedUrl,
+  state,
+}: MarketResultListProperties) {
+  const platformLabel = platform === "polymarket" ? "Polymarket" : "Kalshi";
+  return (
+    <section
+      className="market-result-column"
+      aria-label={`${platformLabel} results`}
+    >
+      <div className="market-result-column-heading">
+        <span
+          className={`venue-dot venue-dot-${platform}`}
+          aria-hidden="true"
+        />
+        <h3>{platformLabel}</h3>
+      </div>
+      <div className="market-result-list" aria-live="polite">
+        {state.status === "loading" ? (
+          <div className="market-result-status">Searching {platformLabel}…</div>
+        ) : null}
+        {state.status === "error" ? (
+          <div className="market-result-status market-result-error">
+            {state.error}
+          </div>
+        ) : null}
+        {state.status === "success" && state.results.length === 0 ? (
+          <div className="market-result-status">No active matches found.</div>
+        ) : null}
+        {state.results.map((result) => (
+          <button
+            className={`market-result${selectedUrl === result.url ? " market-result-selected" : ""}`}
+            key={result.externalId}
+            type="button"
+            onClick={() => onSelect(result)}
+          >
+            <span>{result.title}</span>
+            {result.subtitle ? <small>{result.subtitle}</small> : null}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }

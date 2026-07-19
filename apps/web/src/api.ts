@@ -6,6 +6,7 @@ import {
   DisputeCaseSchema,
   FinePredictReportSchema,
   MarketObservationSchema,
+  MarketSearchResponseSchema,
   PublicSettingsSchema,
   SubscriptionSummarySchema,
   UsageSummarySchema,
@@ -20,6 +21,7 @@ import {
   type FinePredictReport,
   type MarketObservation,
   type MarketPlatform,
+  type MarketSearchResult,
   type PublicSettings,
   type SubscriptionSummary,
   type UsageSummary,
@@ -164,6 +166,27 @@ export async function getReport(slug: string): Promise<FinePredictReport> {
 export async function listRecentReports(): Promise<RecentReport[]> {
   return RecentReportsResponseSchema.parse(await requestJson("/api/reports"))
     .reports;
+}
+
+/**
+ * Searches active markets on one public venue.
+ *
+ * @param platform - Polymarket or Kalshi.
+ * @param query - User-entered term containing at least three characters.
+ * @param signal - Optional cancellation signal for superseded searches.
+ * @returns Ranked selectable market matches.
+ */
+export async function searchMarkets(
+  platform: MarketPlatform,
+  query: string,
+  signal?: AbortSignal,
+): Promise<MarketSearchResult[]> {
+  const searchParameters = new URLSearchParams({ platform, query });
+  return MarketSearchResponseSchema.parse(
+    await requestJson(`/api/markets/search?${searchParameters.toString()}`, {
+      ...(signal ? { signal } : {}),
+    }),
+  ).results;
 }
 
 /**

@@ -8,6 +8,7 @@ import { MemoryReportStore } from "./database/store.js";
 /** Integration-test runtime configuration. */
 const TEST_CONFIG = loadConfig({
   ADMIN_API_KEY: "integration-admin-key",
+  ODDPOOL_API_KEY: "integration-oddpool-key",
   PORT: "3001",
   WEB_ORIGIN: "http://localhost:5173",
 });
@@ -18,8 +19,34 @@ const TEST_CONFIG = loadConfig({
  * @returns Fetch implementation suitable for ReportService integration tests.
  */
 function createMarketFetch(): typeof fetch {
-  return (async (input: string | URL | Request) => {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
+    if (url.startsWith("https://api.oddpool.com/search/markets")) {
+      const parsedUrl = new URL(url);
+      const platform = parsedUrl.searchParams.get("exchange");
+      if (
+        new Headers(init?.headers).get("x-api-key") !==
+        "integration-oddpool-key"
+      ) {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      return Response.json([
+        {
+          event_id:
+            platform === "polymarket" ? "example-event" : "KXEXAMPLE-26",
+          event_title: "Example event",
+          exchange: platform,
+          market_id:
+            platform === "polymarket"
+              ? "condition-example"
+              : "KXEXAMPLE-26-YES",
+          question: "Will the example happen?",
+          series_id: platform === "kalshi" ? "KXEXAMPLE" : null,
+          slug: platform === "polymarket" ? "will-example-happen" : null,
+          status: "active",
+        },
+      ]);
+    }
     if (url.includes("/markets/slug/")) {
       return new Response(JSON.stringify({ error: "not found" }), {
         status: 404,
@@ -85,6 +112,30 @@ describe("FinePredict API integration", () => {
       .send({ model: "gpt-5.6-terra" })
       .expect(200);
     expect(response.body.model).toBe("gpt-5.6-terra");
+  });
+
+  it("searches Oddpool markets without exposing the server credential", async () => {
+    const app = createApp({
+      config: TEST_CONFIG,
+      fetchImplementation: createMarketFetch(),
+      store: new MemoryReportStore(),
+    });
+
+    const response = await request(app)
+      .get("/api/markets/search")
+      .query({ platform: "polymarket", query: "example" })
+      .expect(200);
+
+    expect(response.body.results).toEqual([
+      expect.objectContaining({
+        platform: "polymarket",
+        title: "Will the example happen?",
+        url: "https://polymarket.com/event/example-event/will-example-happen",
+      }),
+    ]);
+    expect(JSON.stringify(response.body)).not.toContain(
+      "integration-oddpool-key",
+    );
   });
 
   it("keeps the liveness endpoint independent of report storage", async () => {
