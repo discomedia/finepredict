@@ -21,6 +21,52 @@ const TEST_CONFIG = loadConfig({
 function createMarketFetch(): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
+    if (url.startsWith("https://api.oddpool.com/search/events")) {
+      const parsedUrl = new URL(url);
+      if (
+        new Headers(init?.headers).get("x-api-key") !==
+        "integration-oddpool-key"
+      ) {
+        return Response.json({ error: "unauthorized" }, { status: 401 });
+      }
+      const eventMarketsMatch = parsedUrl.pathname.match(
+        /^\/search\/events\/([^/]+)\/markets$/,
+      );
+      if (eventMarketsMatch) {
+        const eventId = decodeURIComponent(eventMarketsMatch[1] ?? "");
+        const platform = eventId.startsWith("KX") ? "kalshi" : "polymarket";
+        return Response.json([
+          {
+            event_id: eventId,
+            event_title: "Example event",
+            exchange: platform,
+            market_id:
+              platform === "polymarket"
+                ? "condition-example"
+                : "KXEXAMPLE-26-YES",
+            question: "Will the example happen?",
+            series_id: platform === "kalshi" ? "KXEXAMPLE" : null,
+            slug: platform === "polymarket" ? "will-example-happen" : null,
+            status: "active",
+            volume: 100,
+          },
+        ]);
+      }
+      const platform = parsedUrl.searchParams.get("exchange");
+      return Response.json([
+        {
+          event_id:
+            platform === "polymarket" ? "example-event" : "KXEXAMPLE-26",
+          exchange: platform,
+          market_count: 1,
+          market_questions: ["Will the example happen?"],
+          status: "active",
+          title: "Example event",
+          total_liquidity: 100,
+          total_volume: 100,
+        },
+      ]);
+    }
     if (url.startsWith("https://api.oddpool.com/search/markets")) {
       const parsedUrl = new URL(url);
       const platform = parsedUrl.searchParams.get("exchange");
@@ -46,6 +92,21 @@ function createMarketFetch(): typeof fetch {
           status: "active",
         },
       ]);
+    }
+    if (
+      url.startsWith("https://external-api.kalshi.com/trade-api/v2/markets?")
+    ) {
+      return Response.json({
+        cursor: "",
+        markets: [
+          {
+            status: "open",
+            subtitle: "Yes",
+            ticker: "KXEXAMPLE-26-YES",
+            yes_sub_title: "Yes",
+          },
+        ],
+      });
     }
     if (url.includes("/markets/slug/")) {
       return new Response(JSON.stringify({ error: "not found" }), {
@@ -131,6 +192,29 @@ describe("FinePredict API integration", () => {
         platform: "polymarket",
         title: "Will the example happen?",
         url: "https://polymarket.com/event/example-event/will-example-happen",
+      }),
+    ]);
+    expect(JSON.stringify(response.body)).not.toContain(
+      "integration-oddpool-key",
+    );
+  });
+
+  it("returns aligned cross-venue market pairs", async () => {
+    const app = createApp({
+      config: TEST_CONFIG,
+      fetchImplementation: createMarketFetch(),
+      store: new MemoryReportStore(),
+    });
+
+    const response = await request(app)
+      .get("/api/markets/search-pairs")
+      .query({ query: "example" })
+      .expect(200);
+
+    expect(response.body.pairs).toEqual([
+      expect.objectContaining({
+        kalshi: expect.objectContaining({ platform: "kalshi" }),
+        polymarket: expect.objectContaining({ platform: "polymarket" }),
       }),
     ]);
     expect(JSON.stringify(response.body)).not.toContain(

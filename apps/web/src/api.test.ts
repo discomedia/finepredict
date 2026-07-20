@@ -9,6 +9,7 @@ import {
   getRelatedDisputes,
   listWatchlists,
   requestMagicLink,
+  searchMarketPairs,
   searchMarkets,
   updateSettings,
 } from "./api.js";
@@ -132,6 +133,38 @@ describe("authenticated API client", () => {
     await expect(searchMarkets("kalshi", "Fed rates")).resolves.toHaveLength(1);
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "http://localhost:3001/api/markets/search?platform=kalshi&query=Fed+rates",
+    );
+    expect(getNeonAuthToken).not.toHaveBeenCalled();
+  });
+
+  it("loads aligned cross-venue pairs with an encoded public query", async () => {
+    const polymarket = {
+      endDate: null,
+      externalId: "condition-fed",
+      platform: "polymarket",
+      subtitle: "Fed Decision in September?",
+      title: "Will the Fed decrease rates by 25 bps?",
+      url: "https://polymarket.com/event/fed-september/cut-25",
+    };
+    const kalshi = {
+      endDate: null,
+      externalId: "KXFED-26SEP-C25",
+      platform: "kalshi",
+      subtitle: "Fed decision in Sep 2026?",
+      title: "Cut 25bps",
+      url: "https://kalshi.com/markets/kxfed/fed-september/kxfed-26sep-c25",
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        pairs: [{ kalshi, polymarket }],
+        query: "Fed rates",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchMarketPairs("Fed rates")).resolves.toHaveLength(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://localhost:3001/api/markets/search-pairs?query=Fed+rates",
     );
     expect(getNeonAuthToken).not.toHaveBeenCalled();
   });

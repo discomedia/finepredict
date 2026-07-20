@@ -6,6 +6,7 @@ import {
   DisputeCaseSchema,
   FinePredictReportSchema,
   MarketObservationSchema,
+  MarketPairSearchResponseSchema,
   MarketSearchResponseSchema,
   PublicSettingsSchema,
   SubscriptionSummarySchema,
@@ -21,6 +22,7 @@ import {
   type FinePredictReport,
   type MarketObservation,
   type MarketPlatform,
+  type MarketSearchPair,
   type MarketSearchResult,
   type PublicSettings,
   type SubscriptionSummary,
@@ -187,6 +189,28 @@ export async function searchMarkets(
       ...(signal ? { signal } : {}),
     }),
   ).results;
+}
+
+/**
+ * Searches for semantically aligned Polymarket and Kalshi market pairs.
+ *
+ * @param query - User-entered term containing at least three characters.
+ * @param signal - Optional cancellation signal for superseded searches.
+ * @returns Ranked selectable cross-venue pairs.
+ */
+export async function searchMarketPairs(
+  query: string,
+  signal?: AbortSignal,
+): Promise<MarketSearchPair[]> {
+  const searchParameters = new URLSearchParams({ query });
+  return MarketPairSearchResponseSchema.parse(
+    await requestJson(
+      `/api/markets/search-pairs?${searchParameters.toString()}`,
+      {
+        ...(signal ? { signal } : {}),
+      },
+    ),
+  ).pairs;
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { MarketPlatform, MarketSearchResult } from "@finepredict/shared";
+import type { MarketSearchPair, MarketSearchResult } from "@finepredict/shared";
 import { ArrowRight, Link2, Search } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -6,24 +6,24 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   createReport,
   listRecentReports,
-  searchMarkets,
+  searchMarketPairs,
   type RecentReport,
 } from "../api.js";
 
 /** Loading lifecycle for one venue's dynamic result list. */
 type MarketSearchStatus = "idle" | "loading" | "success" | "error";
 
-/** Dynamic search state retained independently for each venue. */
-interface PlatformSearchState {
+/** Dynamic lifecycle for one cross-venue pair search. */
+interface MarketPairSearchState {
   error: string | null;
-  results: MarketSearchResult[];
+  pairs: MarketSearchPair[];
   status: MarketSearchStatus;
 }
 
-/** Empty venue state used before a valid search term is entered. */
-const EMPTY_PLATFORM_SEARCH_STATE: PlatformSearchState = {
+/** Empty pair state used before a valid search term is entered. */
+const EMPTY_MARKET_PAIR_SEARCH_STATE: MarketPairSearchState = {
   error: null,
-  results: [],
+  pairs: [],
   status: "idle",
 };
 
@@ -42,12 +42,9 @@ export function HomePage() {
     "",
   ]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchState, setSearchState] = useState<
-    Record<MarketPlatform, PlatformSearchState>
-  >({
-    kalshi: EMPTY_PLATFORM_SEARCH_STATE,
-    polymarket: EMPTY_PLATFORM_SEARCH_STATE,
-  });
+  const [searchState, setSearchState] = useState<MarketPairSearchState>(
+    EMPTY_MARKET_PAIR_SEARCH_STATE,
+  );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
@@ -73,46 +70,32 @@ export function HomePage() {
   useEffect(() => {
     const query = searchTerm.trim();
     if (query.length < MINIMUM_MARKET_SEARCH_LENGTH) {
-      setSearchState({
-        kalshi: EMPTY_PLATFORM_SEARCH_STATE,
-        polymarket: EMPTY_PLATFORM_SEARCH_STATE,
-      });
+      setSearchState(EMPTY_MARKET_PAIR_SEARCH_STATE);
       return;
     }
     const controller = new AbortController();
-    setSearchState({
-      kalshi: { error: null, results: [], status: "loading" },
-      polymarket: { error: null, results: [], status: "loading" },
-    });
+    setSearchState({ error: null, pairs: [], status: "loading" });
     const timeout = window.setTimeout(() => {
-      for (const platform of ["polymarket", "kalshi"] as const) {
-        void searchMarkets(platform, query, controller.signal)
-          .then((results) => {
-            setSearchState((current) => ({
-              ...current,
-              [platform]: { error: null, results, status: "success" },
-            }));
-          })
-          .catch((caughtError: unknown) => {
-            if (
-              caughtError instanceof DOMException &&
-              caughtError.name === "AbortError"
-            ) {
-              return;
-            }
-            setSearchState((current) => ({
-              ...current,
-              [platform]: {
-                error:
-                  caughtError instanceof Error
-                    ? caughtError.message
-                    : `FinePredict could not search ${platform}.`,
-                results: [],
-                status: "error",
-              },
-            }));
+      void searchMarketPairs(query, controller.signal)
+        .then((pairs) => {
+          setSearchState({ error: null, pairs, status: "success" });
+        })
+        .catch((caughtError: unknown) => {
+          if (
+            caughtError instanceof DOMException &&
+            caughtError.name === "AbortError"
+          ) {
+            return;
+          }
+          setSearchState({
+            error:
+              caughtError instanceof Error
+                ? caughtError.message
+                : `FinePredict could not find matching markets.`,
+            pairs: [],
+            status: "error",
           });
-      }
+        });
     }, MARKET_SEARCH_DEBOUNCE_MILLISECONDS);
     return () => {
       window.clearTimeout(timeout);
@@ -226,21 +209,18 @@ export function HomePage() {
             {searchTerm.trim().length > 0 &&
             searchTerm.trim().length < MINIMUM_MARKET_SEARCH_LENGTH
               ? `Enter at least ${MINIMUM_MARKET_SEARCH_LENGTH} characters to search.`
-              : "Results balance keyword match, market activity and variety."}
+              : "Each row pairs markets with matching outcomes and deadlines."}
           </div>
 
           {searchTerm.trim().length >= MINIMUM_MARKET_SEARCH_LENGTH ? (
-            <div className="market-search-results">
-              {(["polymarket", "kalshi"] as const).map((platform) => (
-                <MarketResultList
-                  key={platform}
-                  platform={platform}
-                  selectedUrl={urls[platform === "polymarket" ? 0 : 1] ?? ""}
-                  state={searchState[platform]}
-                  onSelect={selectMarket}
-                />
-              ))}
-            </div>
+            <MarketPairResultList
+              selectedUrls={{
+                kalshi: urls[1] ?? "",
+                polymarket: urls[0] ?? "",
+              }}
+              state={searchState}
+              onSelect={selectMarket}
+            />
           ) : null}
 
           <div className="selected-market-heading">
@@ -338,61 +318,70 @@ export function HomePage() {
   );
 }
 
-/** Properties for one venue's dynamic result list. */
-interface MarketResultListProperties {
+/** Properties for the aligned cross-venue result grid. */
+interface MarketPairResultListProperties {
   onSelect: (result: MarketSearchResult) => void;
-  platform: MarketPlatform;
-  selectedUrl: string;
-  state: PlatformSearchState;
+  selectedUrls: { kalshi: string; polymarket: string };
+  state: MarketPairSearchState;
 }
 
 /**
- * Renders independently loading, ranked results for one venue.
+ * Renders matching Polymarket and Kalshi outcomes on shared rows.
  *
- * @param properties - Venue state, selected URL, and selection callback.
- * @returns Accessible dynamic market result list.
+ * @param properties - Pair state, selected URLs, and selection callback.
+ * @returns Accessible dynamic paired-market grid.
  */
-function MarketResultList({
+function MarketPairResultList({
   onSelect,
-  platform,
-  selectedUrl,
+  selectedUrls,
   state,
-}: MarketResultListProperties) {
-  const platformLabel = platform === "polymarket" ? "Polymarket" : "Kalshi";
+}: MarketPairResultListProperties) {
   return (
-    <section
-      className="market-result-column"
-      aria-label={`${platformLabel} results`}
-    >
-      <div className="market-result-column-heading">
-        <span
-          className={`venue-dot venue-dot-${platform}`}
-          aria-hidden="true"
-        />
-        <h3>{platformLabel}</h3>
+    <section className="market-pair-results" aria-label="Matching markets">
+      <div className="market-pair-headings">
+        <div className="market-result-column-heading">
+          <span className="venue-dot venue-dot-polymarket" aria-hidden="true" />
+          <h3>Polymarket</h3>
+        </div>
+        <div className="market-result-column-heading">
+          <span className="venue-dot venue-dot-kalshi" aria-hidden="true" />
+          <h3>Kalshi</h3>
+        </div>
       </div>
-      <div className="market-result-list" aria-live="polite">
+      <div className="market-pair-list" aria-live="polite">
         {state.status === "loading" ? (
-          <div className="market-result-status">Searching {platformLabel}…</div>
+          <div className="market-result-status">
+            Finding equivalent markets…
+          </div>
         ) : null}
         {state.status === "error" ? (
           <div className="market-result-status market-result-error">
             {state.error}
           </div>
         ) : null}
-        {state.status === "success" && state.results.length === 0 ? (
-          <div className="market-result-status">No active matches found.</div>
+        {state.status === "success" && state.pairs.length === 0 ? (
+          <div className="market-result-status">
+            No credible cross-venue equivalents found. Try a more specific event
+            or paste URLs manually.
+          </div>
         ) : null}
-        {state.results.map((result) => (
-          <button
-            className={`market-result${selectedUrl === result.url ? " market-result-selected" : ""}`}
-            key={result.externalId}
-            type="button"
-            onClick={() => onSelect(result)}
+        {state.pairs.map((pair) => (
+          <div
+            className="market-pair-row"
+            key={`${pair.polymarket.externalId}:${pair.kalshi.externalId}`}
           >
-            <span>{result.title}</span>
-            {result.subtitle ? <small>{result.subtitle}</small> : null}
-          </button>
+            {([pair.polymarket, pair.kalshi] as const).map((result) => (
+              <button
+                className={`market-result${selectedUrls[result.platform] === result.url ? " market-result-selected" : ""}`}
+                key={result.externalId}
+                type="button"
+                onClick={() => onSelect(result)}
+              >
+                <span>{result.title}</span>
+                {result.subtitle ? <small>{result.subtitle}</small> : null}
+              </button>
+            ))}
+          </div>
         ))}
       </div>
     </section>

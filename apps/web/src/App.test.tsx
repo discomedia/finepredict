@@ -49,26 +49,25 @@ describe("App", () => {
       if (url.endsWith("/api/reports")) {
         return Response.json({ reports: [] });
       }
-      const platform = new URL(url).searchParams.get("platform");
+      const polymarket = {
+        endDate: null,
+        externalId: "condition-1",
+        platform: "polymarket",
+        subtitle: "Bitcoin price in 2026",
+        title: "Will Bitcoin reach $100,000?",
+        url: "https://polymarket.com/event/bitcoin/will-bitcoin-reach-100k",
+      };
+      const kalshi = {
+        endDate: null,
+        externalId: "KXBTC-1",
+        platform: "kalshi",
+        subtitle: "Bitcoin price in 2026",
+        title: "$100,000 or above",
+        url: "https://kalshi.com/markets/kxbtc/bitcoin/kxbtc-1",
+      };
       return Response.json({
-        platform,
+        pairs: [{ kalshi, polymarket }],
         query: "bitcoin",
-        results: [
-          {
-            endDate: null,
-            externalId: platform === "polymarket" ? "condition-1" : "KXBTC-1",
-            platform,
-            subtitle: "Bitcoin event",
-            title:
-              platform === "polymarket"
-                ? "Will Bitcoin reach $100,000?"
-                : "Will Bitcoin close above $100,000?",
-            url:
-              platform === "polymarket"
-                ? "https://polymarket.com/event/bitcoin/will-bitcoin-reach-100k"
-                : "https://kalshi.com/markets/kxbtc/bitcoin/kxbtc-1",
-          },
-        ],
       });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -85,7 +84,7 @@ describe("App", () => {
       name: /will bitcoin reach \$100,000/i,
     });
     const kalshiResult = await screen.findByRole("button", {
-      name: /will bitcoin close above \$100,000/i,
+      name: /\$100,000 or above/i,
     });
     fireEvent.click(polymarketResult);
     fireEvent.click(kalshiResult);

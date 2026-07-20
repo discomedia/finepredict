@@ -1,6 +1,7 @@
 import {
   CreateReportRequestSchema,
   FinePredictModelSchema,
+  MarketPairSearchQuerySchema,
   MarketSearchQuerySchema,
   UpdateSettingsRequestSchema,
 } from "@finepredict/shared";
@@ -172,6 +173,15 @@ export function createApp(dependencies: CreateAppDependencies): Express {
       response.json(
         await marketSearchService.search(input.platform, input.query),
       );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/markets/search-pairs", async (request, response, next) => {
+    try {
+      const input = MarketPairSearchQuerySchema.parse(request.query);
+      response.json(await marketSearchService.searchPairs(input.query));
     } catch (error) {
       next(error);
     }

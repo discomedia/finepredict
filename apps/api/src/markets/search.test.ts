@@ -106,6 +106,118 @@ describe("MarketSearchService", () => {
     }
   });
 
+  it("pairs equivalent events and exact child-market thresholds", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(String(input));
+      if (url.hostname === "external-api.kalshi.com") {
+        return jsonResponse({
+          cursor: "",
+          markets: [
+            {
+              status: "open",
+              subtitle: "Above $129,999.99",
+              ticker: "KXBTCMAXY-26DEC31-129999.99",
+              yes_sub_title: "Above $129,999.99",
+            },
+          ],
+        });
+      }
+      if (url.pathname === "/search/events") {
+        const platform = url.searchParams.get("exchange");
+        return jsonResponse([
+          {
+            event_id:
+              platform === "polymarket"
+                ? "bitcoin-price-before-2027"
+                : "KXBTCMAXY-26DEC31",
+            exchange: platform,
+            market_questions: ["Will Bitcoin be above a price in 2026?"],
+            status: "active",
+            title:
+              platform === "polymarket"
+                ? "What price will Bitcoin hit in 2026?"
+                : "How high will Bitcoin get in 2026?",
+            total_liquidity: 100_000,
+            total_volume: 1_000_000,
+          },
+        ]);
+      }
+      if (url.pathname.endsWith("/markets")) {
+        const isKalshi = url.pathname.includes("KXBTCMAXY");
+        const common = {
+          event_id: isKalshi
+            ? "KXBTCMAXY-26DEC31"
+            : "bitcoin-price-before-2027",
+          event_title: isKalshi
+            ? "How high will Bitcoin get in 2026?"
+            : "What price will Bitcoin hit in 2026?",
+          exchange: isKalshi ? "kalshi" : "polymarket",
+          series_id: isKalshi ? "KXBTCMAXY" : null,
+          status: "active",
+          volume: 100_000,
+        };
+        return jsonResponse(
+          isKalshi
+            ? [
+                {
+                  ...common,
+                  market_id: "KXBTCMAXY-26DEC31-129999.99",
+                  question:
+                    "Will Bitcoin be above $129,999.99 by Dec 31, 2026?",
+                  slug: null,
+                },
+                {
+                  ...common,
+                  market_id: "KXBTCMAXY-26DEC31-119999.99",
+                  question:
+                    "Will Bitcoin be above $119,999.99 by Dec 31, 2026?",
+                  slug: null,
+                },
+              ]
+            : [
+                {
+                  ...common,
+                  market_id: "condition-130000",
+                  question: "Will Bitcoin reach $130,000 by December 31, 2026?",
+                  slug: "will-bitcoin-reach-130000-in-2026",
+                },
+                {
+                  ...common,
+                  market_id: "condition-below-120000",
+                  question:
+                    "Will Bitcoin be below $120,000 by December 31, 2026?",
+                  slug: "will-bitcoin-be-below-120000-in-2026",
+                },
+              ],
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+    const service = new MarketSearchService(
+      "oddpool-test-key",
+      fetchImplementation,
+    );
+
+    const response = await service.searchPairs("bitcoin");
+    const specificResponse = await service.searchPairs("bitcoin 130000");
+
+    expect(response.pairs).toHaveLength(1);
+    expect(response.pairs[0]).toMatchObject({
+      kalshi: {
+        externalId: "KXBTCMAXY-26DEC31-129999.99",
+        title: "Above $129,999.99",
+      },
+      polymarket: {
+        externalId: "condition-130000",
+        title: "Will Bitcoin reach $130,000 by December 31, 2026?",
+      },
+    });
+    expect(specificResponse.pairs).toHaveLength(1);
+    expect(specificResponse.pairs[0]?.polymarket.externalId).toBe(
+      "condition-130000",
+    );
+  });
+
   it("keeps complete keyword matches ahead of higher-volume incidental matches", async () => {
     const fetchImplementation = vi.fn<typeof fetch>(async (input) => {
       const url = new URL(String(input));

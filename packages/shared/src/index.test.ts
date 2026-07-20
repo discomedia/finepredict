@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   CreateReportRequestSchema,
   FinePredictModelSchema,
+  MarketPairSearchQuerySchema,
   MarketPlatformSchema,
   MarketSearchQuerySchema,
 } from "./index.js";
@@ -32,5 +33,8 @@ describe("shared schemas", () => {
     expect(() =>
       MarketSearchQuerySchema.parse({ platform: "kalshi", query: "Fe" }),
     ).toThrow();
+    expect(
+      MarketPairSearchQuerySchema.parse({ query: "  Bitcoin  " }).query,
+    ).toBe("Bitcoin");
   });
 });

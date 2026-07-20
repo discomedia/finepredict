@@ -38,6 +38,34 @@ export const MarketSearchResponseSchema = z.object({
 /** Ranked market-search response from one venue. */
 export type MarketSearchResponse = z.infer<typeof MarketSearchResponseSchema>;
 
+/** Search query accepted by cross-venue market-pair discovery. */
+export const MarketPairSearchQuerySchema = z.object({
+  query: z.string().trim().min(3).max(80),
+});
+
+/** Validated cross-venue market-pair search query. */
+export type MarketPairSearchQuery = z.infer<typeof MarketPairSearchQuerySchema>;
+
+/** One aligned Polymarket and Kalshi market pair. */
+export const MarketSearchPairSchema = z.object({
+  kalshi: MarketSearchResultSchema,
+  polymarket: MarketSearchResultSchema,
+});
+
+/** One aligned pair of selectable cross-venue markets. */
+export type MarketSearchPair = z.infer<typeof MarketSearchPairSchema>;
+
+/** Public response containing semantically aligned market pairs. */
+export const MarketPairSearchResponseSchema = z.object({
+  pairs: z.array(MarketSearchPairSchema),
+  query: z.string().min(3),
+});
+
+/** Cross-venue pair-search response. */
+export type MarketPairSearchResponse = z.infer<
+  typeof MarketPairSearchResponseSchema
+>;
+
 /** FinePredict model choices exposed to administrators. */
 export const FinePredictModelSchema = z.enum([
   "gpt-5.6-luna",

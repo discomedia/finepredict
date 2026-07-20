@@ -7,7 +7,7 @@ It deliberately does not create a pseudo-precise risk score. Reports show specif
 ## Product surface
 
 - One- or two-market reports from public Polymarket and Kalshi URLs
-- Debounced cross-venue market search ranked by relevance, activity, and event variety
+- Debounced cross-venue search that pairs equivalent events, outcomes, thresholds, and deadlines
 - Plain-English settlement summaries with verbatim supporting quotes
 - 18 deterministic wording and consistency checks
 - Optional structured explanations through `@discomedia/utils` and `gpt-5.6-luna`
@@ -38,7 +38,7 @@ Polygon RPC     Optional Polymarket on-chain dispute evidence
 Oddpool         Full-text Polymarket and Kalshi market discovery
 ```
 
-Full-text discovery uses [Oddpool market search](https://docs.oddpool.com/search/search-markets). FinePredict reranks the returned relevance candidates using text coverage, title/event specificity, logarithmic volume and liquidity, and event diversity. It enriches Kalshi candidates through one public [Kalshi Get Markets API](https://docs.kalshi.com/api-reference/market/get-markets) batch request. Contract extraction uses the documented public [Polymarket Gamma API](https://docs.polymarket.com/market-data/fetching-markets) and [Kalshi Get Market API](https://docs.kalshi.com/api-reference/market/get-market). Trading credentials are not required for read-only discovery or extraction.
+Cross-venue discovery starts with [Oddpool event search](https://docs.oddpool.com/search/search-events), pairs semantically compatible event groups, and expands the strongest candidates through [Oddpool event markets](https://docs.oddpool.com/search/event-markets). FinePredict then aligns individual outcomes using direction, numeric thresholds, and dates; volume and liquidity only break ties between otherwise credible matches. It enriches Kalshi candidates through one public [Kalshi Get Markets API](https://docs.kalshi.com/api-reference/market/get-markets) batch request. Contract extraction uses the documented public [Polymarket Gamma API](https://docs.polymarket.com/market-data/fetching-markets) and [Kalshi Get Market API](https://docs.kalshi.com/api-reference/market/get-market). Trading credentials are not required for read-only discovery or extraction.
 
 ## Local development
 
@@ -152,28 +152,30 @@ To verify Oddpool discovery through the local API without exposing its key:
 ```bash
 curl 'http://localhost:3001/api/markets/search?platform=polymarket&query=bitcoin'
 curl 'http://localhost:3001/api/markets/search?platform=kalshi&query=bitcoin'
+curl 'http://localhost:3001/api/markets/search-pairs?query=bitcoin'
 ```
 
-Search results merge Oddpool's top 50 relevance candidates with its top 50 by
-volume, then rank locally so all query terms dominate activity signals. Volume
-and liquidity are logarithmic tie-breakers, and repeated outcomes from one event
-receive a diversity penalty. Kalshi's public batch endpoint supplies the
-specific outcome label shown as each result title.
+The homepage uses the paired endpoint. It pairs event groups before comparing
+their child markets, rejects incompatible dates and meanings, and aligns exact
+directions and numeric thresholds. A query may intentionally return no pairs
+when the venues do not offer a credible equivalent. Kalshi's public batch
+endpoint supplies the specific outcome label shown as each result title.
 
 ## API
 
 All report reads are public in the MVP.
 
-| Method | Path                  | Purpose                                                      |
-| ------ | --------------------- | ------------------------------------------------------------ |
-| `GET`  | `/api/health/live`    | Database-free Railway liveness check                         |
-| `GET`  | `/api/meta`           | Supported platforms and deterministic-check count            |
-| `GET`  | `/api/markets/search` | Search one venue with `platform` and `query`                 |
-| `POST` | `/api/reports`        | Create a report from `{ "urls": ["..."] }`                   |
-| `GET`  | `/api/reports`        | List recent public reports                                   |
-| `GET`  | `/api/reports/:slug`  | Fetch a permanent report                                     |
-| `GET`  | `/api/settings`       | Read the active model and allowed choices                    |
-| `PUT`  | `/api/settings`       | Update the model; requires an admin session or emergency key |
+| Method | Path                        | Purpose                                                      |
+| ------ | --------------------------- | ------------------------------------------------------------ |
+| `GET`  | `/api/health/live`          | Database-free Railway liveness check                         |
+| `GET`  | `/api/meta`                 | Supported platforms and deterministic-check count            |
+| `GET`  | `/api/markets/search`       | Search one venue with `platform` and `query`                 |
+| `GET`  | `/api/markets/search-pairs` | Find aligned Polymarket and Kalshi equivalents by `query`    |
+| `POST` | `/api/reports`              | Create a report from `{ "urls": ["..."] }`                   |
+| `GET`  | `/api/reports`              | List recent public reports                                   |
+| `GET`  | `/api/reports/:slug`        | Fetch a permanent report                                     |
+| `GET`  | `/api/settings`             | Read the active model and allowed choices                    |
+| `PUT`  | `/api/settings`             | Update the model; requires an admin session or emergency key |
 
 Account, watchlist, billing, dispute, and developer routes are documented by
 the generated OpenAPI document at `GET /api/openapi.json`. Developer clients use
