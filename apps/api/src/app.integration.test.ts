@@ -108,6 +108,20 @@ function createMarketFetch(): typeof fetch {
         ],
       });
     }
+    if (url === "https://gamma-api.polymarket.com/markets/pm-event-1") {
+      return Response.json({
+        clobTokenIds: '["example-yes-token", "example-no-token"]',
+        outcomes: '["Yes", "No"]',
+      });
+    }
+    if (url.startsWith("https://clob.polymarket.com/prices-history?")) {
+      return Response.json({
+        history: [
+          { p: "0.41", t: 1_784_678_400 },
+          { p: "0.45", t: 1_784_732_400 },
+        ],
+      });
+    }
     if (url.includes("/markets/slug/")) {
       return new Response(JSON.stringify({ error: "not found" }), {
         status: 404,
@@ -156,6 +170,31 @@ describe("FinePredict API integration", () => {
       .get(`/api/reports/${String(createResponse.body.slug)}`)
       .expect(200);
     expect(loadResponse.body.id).toBe(createResponse.body.id);
+  });
+
+  it("returns a short-lived public live-price snapshot for a report", async () => {
+    const app = createApp({
+      config: TEST_CONFIG,
+      fetchImplementation: createMarketFetch(),
+      store: new MemoryReportStore(),
+    });
+    const report = await request(app)
+      .post("/api/reports")
+      .send({ urls: ["https://polymarket.com/event/example"] })
+      .expect(201);
+
+    const response = await request(app)
+      .get(`/api/reports/${String(report.body.slug)}/live-prices`)
+      .expect("Cache-Control", "private, max-age=30")
+      .expect(200);
+
+    expect(response.body.prices).toEqual([
+      expect.objectContaining({
+        availability: "available",
+        noPricePercent100: 55,
+        yesPricePercent100: 45,
+      }),
+    ]);
   });
 
   it("requires the administrator key before changing the model", async () => {

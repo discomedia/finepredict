@@ -3,6 +3,7 @@ import type {
   DisputeCase,
   FinePredictReport,
   MarketObservation,
+  MarketPriceSnapshot,
 } from "@finepredict/shared";
 import {
   Activity,
@@ -18,10 +19,16 @@ import {
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { getMarketStatus, getRelatedDisputes, getReport } from "../api.js";
+import {
+  getMarketStatus,
+  getRelatedDisputes,
+  getReport,
+  getReportLivePrices,
+} from "../api.js";
 import { ComparisonTable } from "../components/ComparisonTable.js";
 import { Countdown } from "../components/Countdown.js";
 import { FindingCard } from "../components/FindingCard.js";
+import { LivePriceComparison } from "../components/LivePriceComparison.js";
 
 /** Public shareable report page. */
 export function ReportPage() {
@@ -33,6 +40,7 @@ export function ReportPage() {
     Record<string, MarketObservation | null>
   >({});
   const [relatedDisputes, setRelatedDisputes] = useState<DisputeCase[]>([]);
+  const [livePrices, setLivePrices] = useState<MarketPriceSnapshot[]>([]);
 
   useEffect(() => {
     if (!slug) {
@@ -66,6 +74,33 @@ export function ReportPage() {
     void getRelatedDisputes(slug)
       .then(setRelatedDisputes)
       .catch(() => setRelatedDisputes([]));
+  }, [report, slug]);
+
+  useEffect(() => {
+    if (!report || !slug) return;
+    const reportSlug = slug;
+    let active = true;
+
+    /** Refreshes the report's short-lived public venue-price snapshot. */
+    async function refreshLivePrices(): Promise<void> {
+      try {
+        const prices = await getReportLivePrices(reportSlug);
+        if (active) {
+          setLivePrices(prices);
+        }
+      } catch {
+        // Preserve the most recent successful read instead of flashing an error.
+      }
+    }
+
+    void refreshLivePrices();
+    const intervalId = window.setInterval(() => {
+      void refreshLivePrices();
+    }, 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
   }, [report, slug]);
 
   /**
@@ -153,6 +188,8 @@ export function ReportPage() {
           />
         ))}
       </div>
+
+      <LivePriceComparison markets={report.markets} prices={livePrices} />
 
       {report.comparison && firstMarket && secondMarket ? (
         <ComparisonTable

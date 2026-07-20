@@ -104,6 +104,51 @@ export const MarketContractSchema = z.object({
 /** Normalized market contract captured from Polymarket or Kalshi. */
 export type MarketContract = z.infer<typeof MarketContractSchema>;
 
+/** One time-aligned, venue-reported Yes-price observation. */
+export const MarketPricePointSchema = z.object({
+  timestamp: z.string().datetime(),
+  yesPricePercent100: z.number().min(0).max(100),
+});
+
+/** One point in a compact public market-price history. */
+export type MarketPricePoint = z.infer<typeof MarketPricePointSchema>;
+
+/** Availability state for a read-only live market-price lookup. */
+export const MarketPriceAvailabilitySchema = z.enum([
+  "available",
+  "unavailable",
+]);
+
+/** Whether current public venue pricing could be retrieved. */
+export type MarketPriceAvailability = z.infer<
+  typeof MarketPriceAvailabilitySchema
+>;
+
+/** Current public Yes/No pricing with a small recent history from one venue. */
+export const MarketPriceSnapshotSchema = z.object({
+  availability: MarketPriceAvailabilitySchema,
+  externalId: z.string().min(1),
+  fetchedAt: z.string().datetime(),
+  history: z.array(MarketPricePointSchema).max(96),
+  message: z.string().min(1).nullable(),
+  noPricePercent100: z.number().min(0).max(100).nullable(),
+  platform: MarketPlatformSchema,
+  yesPricePercent100: z.number().min(0).max(100).nullable(),
+});
+
+/** Read-only live market-price data suitable for a comparison report. */
+export type MarketPriceSnapshot = z.infer<typeof MarketPriceSnapshotSchema>;
+
+/** Response containing fresh public price snapshots for report markets. */
+export const MarketPriceSnapshotsResponseSchema = z.object({
+  prices: z.array(MarketPriceSnapshotSchema).min(1).max(2),
+});
+
+/** Fresh market-price response returned by the public report API. */
+export type MarketPriceSnapshotsResponse = z.infer<
+  typeof MarketPriceSnapshotsResponseSchema
+>;
+
 /** A deterministic warning or clarification with verbatim supporting text. */
 export const ContractFindingSchema = z.object({
   id: z.string().min(1),

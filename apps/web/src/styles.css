@@ -1038,6 +1038,151 @@ main {
   font-size: 11px;
 }
 
+.live-prices-section {
+  overflow: hidden;
+}
+
+.live-price-refresh {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.live-price-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 1px;
+  margin: 0 -27px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--line);
+}
+
+.live-price-card {
+  min-height: 118px;
+  padding: 18px 27px;
+  background: var(--surface-cool);
+}
+
+.live-price-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.live-price-values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 9px;
+  margin-top: 15px;
+}
+
+.live-price-values strong {
+  color: var(--ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.live-price-values > span:not(.live-price-no):not(.price-up):not(.price-down) {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.live-price-no {
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.price-up,
+.price-down {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.price-up {
+  color: var(--green);
+}
+
+.price-down {
+  color: var(--red);
+}
+
+.live-price-unavailable,
+.live-price-chart-empty {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.price-history-figure {
+  margin: 22px 0 0;
+}
+
+.price-history-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  margin-bottom: 9px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.price-history-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.price-history-legend i {
+  width: 16px;
+  height: 2px;
+}
+
+.price-history-chart {
+  display: block;
+  width: 100%;
+  height: 172px;
+  overflow: visible;
+  color: #d0d4d0;
+}
+
+.price-history-figure figcaption {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.price-history-figure figcaption span:nth-child(2),
+.price-history-figure figcaption span:nth-child(3) {
+  text-align: center;
+}
+
+.price-history-figure figcaption span:last-child {
+  text-align: right;
+}
+
 .related-case-list {
   border-top: 2px solid var(--navy);
 }
@@ -2414,6 +2559,16 @@ main {
   .market-overview,
   .report-section {
     padding: 19px;
+  }
+
+  .live-price-cards {
+    margin-right: -19px;
+    margin-left: -19px;
+  }
+
+  .live-price-card {
+    padding-right: 19px;
+    padding-left: 19px;
   }
 
   .market-overview h2 {

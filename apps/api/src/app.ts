@@ -32,6 +32,7 @@ import {
   MarketSearchService,
   MarketSearchUnavailableError,
 } from "./markets/search.js";
+import { MarketPriceHistoryService } from "./markets/price-history.js";
 import { ReportService } from "./report-service.js";
 
 /** Dependencies used to construct the HTTP application. */
@@ -56,6 +57,9 @@ export function createApp(dependencies: CreateAppDependencies): Express {
   const reportService = new ReportService(dependencies);
   const marketSearchService = new MarketSearchService(
     dependencies.config.oddpoolApiKey,
+    dependencies.fetchImplementation,
+  );
+  const marketPriceHistoryService = new MarketPriceHistoryService(
     dependencies.fetchImplementation,
   );
   app.disable("x-powered-by");
@@ -206,6 +210,27 @@ export function createApp(dependencies: CreateAppDependencies): Express {
         return;
       }
       response.json(report);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/reports/:slug/live-prices", async (request, response, next) => {
+    try {
+      const report = await reportService.getReport(String(request.params.slug));
+      if (!report) {
+        response.status(404).json({ error: "Report not found." });
+        return;
+      }
+      const prices = await Promise.all(
+        report.markets.map((market) =>
+          marketPriceHistoryService.getPriceSnapshot(
+            market.contract.platform,
+            market.contract.externalId,
+          ),
+        ),
+      );
+      response.set("Cache-Control", "private, max-age=30").json({ prices });
     } catch (error) {
       next(error);
     }

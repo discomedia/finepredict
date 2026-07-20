@@ -5,6 +5,7 @@ import {
   ApiKeySummarySchema,
   DisputeCaseSchema,
   FinePredictReportSchema,
+  MarketPriceSnapshotsResponseSchema,
   MarketObservationSchema,
   MarketPairSearchResponseSchema,
   MarketSearchResponseSchema,
@@ -20,6 +21,7 @@ import {
   type DisputeCase,
   type FinePredictModel,
   type FinePredictReport,
+  type MarketPriceSnapshot,
   type MarketObservation,
   type MarketPlatform,
   type MarketSearchPair,
@@ -158,6 +160,20 @@ export async function getReport(slug: string): Promise<FinePredictReport> {
   return FinePredictReportSchema.parse(
     await requestJson(`/api/reports/${encodeURIComponent(slug)}`),
   );
+}
+
+/**
+ * Loads fresh public read-only market prices for every contract in a report.
+ *
+ * @param slug - Public report identifier.
+ * @returns Current venue prices and a compact one-day history per contract.
+ */
+export async function getReportLivePrices(
+  slug: string,
+): Promise<MarketPriceSnapshot[]> {
+  return MarketPriceSnapshotsResponseSchema.parse(
+    await requestJson(`/api/reports/${encodeURIComponent(slug)}/live-prices`),
+  ).prices;
 }
 
 /**
