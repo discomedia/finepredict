@@ -2,6 +2,11 @@ import {
   buildFinePredictAnalysisUrl,
   isSupportedMarketUrl,
 } from "./market-url.js";
+import {
+  addOddpoolCompareActions,
+  isOddpoolArbitrageDashboardUrl,
+  removeOddpoolCompareActions,
+} from "./oddpool.js";
 
 /** Stable DOM identifier used to prevent duplicate extension controls. */
 const ACTION_ID = "finepredict-check-fine-print";
@@ -46,21 +51,35 @@ function createFinePredictAction(): HTMLButtonElement {
 }
 
 /**
+ * Opens a FinePredict page without giving the opened page access to Oddpool.
+ *
+ * @param url - Prefilled FinePredict comparison or analysis URL.
+ * @returns Nothing.
+ */
+function openFinePredict(url: string): void {
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+/**
  * Adds or removes the action when a market site changes routes.
  *
  * @returns Nothing.
  */
-function refreshFinePredictAction(): void {
+function refreshFinePredictActions(): void {
   const existingAction = document.getElementById(ACTION_ID);
   if (!isSupportedMarketUrl(window.location.href)) {
     existingAction?.remove();
-    return;
-  }
-  if (!existingAction) {
+  } else if (!existingAction) {
     document.body.append(createFinePredictAction());
+  }
+
+  if (isOddpoolArbitrageDashboardUrl(window.location.href)) {
+    addOddpoolCompareActions(document, openFinePredict);
+  } else {
+    removeOddpoolCompareActions(document);
   }
 }
 
-refreshFinePredictAction();
-window.addEventListener("popstate", refreshFinePredictAction);
-window.setInterval(refreshFinePredictAction, 1_000);
+refreshFinePredictActions();
+window.addEventListener("popstate", refreshFinePredictActions);
+window.setInterval(refreshFinePredictActions, 1_000);

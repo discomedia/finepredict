@@ -37,10 +37,13 @@ const MARKET_SEARCH_DEBOUNCE_MILLISECONDS = 400;
 export function HomePage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [urls, setUrls] = useState(() => [
-    new URLSearchParams(location.search).get("marketUrl") ?? "",
-    "",
-  ]);
+  const [urls, setUrls] = useState(() => {
+    const searchParameters = new URLSearchParams(location.search);
+    return [
+      searchParameters.get("marketUrl") ?? "",
+      searchParameters.get("comparisonMarketUrl") ?? "",
+    ];
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [searchState, setSearchState] = useState<MarketPairSearchState>(
     EMPTY_MARKET_PAIR_SEARCH_STATE,

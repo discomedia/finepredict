@@ -43,6 +43,25 @@ describe("App", () => {
     ).toBeDisabled();
   });
 
+  it("prefills an extension-provided comparison without submitting it", () => {
+    const polymarketUrl = "https://polymarket.com/event/will-example-happen";
+    const kalshiUrl = "https://kalshi.com/markets/example/example-market";
+    render(
+      <MemoryRouter
+        initialEntries={[
+          `/?marketUrl=${encodeURIComponent(polymarketUrl)}&comparisonMarketUrl=${encodeURIComponent(kalshiUrl)}`,
+        ]}
+      >
+        <App />
+      </MemoryRouter>,
+    );
+    expect(screen.getByLabelText("Polymarket URL")).toHaveValue(polymarketUrl);
+    expect(screen.getByLabelText("Kalshi URL")).toHaveValue(kalshiUrl);
+    expect(
+      screen.getByRole("button", { name: /compare market rules/i }),
+    ).toBeEnabled();
+  });
+
   it("debounces discovery and prefills the venue-aligned URL fields", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);

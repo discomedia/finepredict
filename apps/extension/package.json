@@ -1,15 +1,18 @@
 {
   "name": "@finepredict/extension",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/content.ts --bundle --format=iife --target=chrome120 --outfile=dist/content.js && cp manifest.json dist/manifest.json",
+    "build": "esbuild src/content.ts --bundle --format=iife --target=chrome120 --outfile=dist/content.js && cp manifest.json dist/manifest.json && mkdir -p dist/icons && cp icons/*.png dist/icons/",
+    "package": "pnpm build && cd dist && zip -FSr finepredict-extension.zip manifest.json content.js icons",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
     "esbuild": "^0.27.3",
+    "jsdom": "^27.1.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }
