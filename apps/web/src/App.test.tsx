@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -60,6 +66,79 @@ describe("App", () => {
     expect(
       screen.getByRole("button", { name: /compare market rules/i }),
     ).toBeEnabled();
+  });
+
+  it("automatically starts an explicitly requested extension comparison", async () => {
+    const polymarketUrl = "https://polymarket.com/event/will-example-happen";
+    const kalshiUrl = "https://kalshi.com/markets/example/example-market";
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/api/reports") && init?.method === "POST") {
+        return Response.json(
+          { error: "Automatic comparison request reached the API." },
+          { status: 503 },
+        );
+      }
+      return Response.json({ reports: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          `/?marketUrl=${encodeURIComponent(polymarketUrl)}&comparisonMarketUrl=${encodeURIComponent(kalshiUrl)}&analyze=1`,
+        ]}
+      >
+        <App />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([input, init]) =>
+            String(input).endsWith("/api/reports") && init?.method === "POST",
+        ),
+      ).toBe(true);
+    });
+    const reportRequest = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).endsWith("/api/reports") && init?.method === "POST",
+    );
+    expect(reportRequest?.[1]?.body).toBe(
+      JSON.stringify({ urls: [polymarketUrl, kalshiUrl] }),
+    );
+  });
+
+  it("does not arm automatic comparison when the initial pair is incomplete", async () => {
+    const polymarketUrl = "https://polymarket.com/event/will-example-happen";
+    const kalshiUrl = "https://kalshi.com/markets/example/example-market";
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({ reports: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          `/?marketUrl=${encodeURIComponent(polymarketUrl)}&analyze=1`,
+        ]}
+      >
+        <App />
+      </MemoryRouter>,
+    );
+    fireEvent.change(screen.getByLabelText("Kalshi URL"), {
+      target: { value: kalshiUrl },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Kalshi URL")).toHaveValue(kalshiUrl);
+    });
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input).endsWith("/api/reports") && init?.method === "POST",
+      ),
+    ).toBe(false);
   });
 
   it("debounces discovery and prefills the venue-aligned URL fields", async () => {

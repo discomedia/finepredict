@@ -79,7 +79,7 @@ export function createOddpoolCompareAction(
 ): HTMLButtonElement {
   const button = documentReference.createElement("button");
   button.type = "button";
-  button.textContent = "Compare";
+  button.textContent = "⚖️ Compare";
   button.setAttribute(ODDPOOL_COMPARE_ACTION_ATTRIBUTE, "true");
   button.setAttribute(
     "aria-label",

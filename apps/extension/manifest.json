@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FinePredict — Compare contract rules",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Compare Polymarket and Kalshi contract fine print from Oddpool, or inspect either market directly.",
   "icons": {
     "16": "icons/icon16.png",

@@ -56,7 +56,7 @@ describe("buildFinePredictAnalysisUrl", () => {
     expect(destination.searchParams.has("analyze")).toBe(false);
   });
 
-  it("prefills both contracts without starting the comparison", () => {
+  it("prefills both contracts and starts the explicitly requested comparison", () => {
     const polymarketUrl = "https://polymarket.com/event/will-example-happen";
     const kalshiUrl = "https://kalshi.com/markets/example/example-market";
     const destination = new URL(
@@ -66,6 +66,6 @@ describe("buildFinePredictAnalysisUrl", () => {
     expect(
       destination.searchParams.get(FINEPREDICT_COMPARISON_URL_PARAMETER),
     ).toBe(kalshiUrl);
-    expect(destination.searchParams.has("analyze")).toBe(false);
+    expect(destination.searchParams.get("analyze")).toBe("1");
   });
 });

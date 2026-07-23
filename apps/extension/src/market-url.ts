@@ -27,11 +27,11 @@ export function isSupportedMarketUrl(value: string): boolean {
 }
 
 /**
- * Builds a FinePredict URL with a market URL prefilled but not submitted.
+ * Builds a FinePredict URL for one prefill or an explicit comparison action.
  *
  * @param marketUrl - Primary supported prediction-market contract URL.
- * @param comparisonMarketUrl - Optional second supported contract URL.
- * @returns FinePredict analysis-entry URL.
+ * @param comparisonMarketUrl - Optional second supported contract URL that should start immediately.
+ * @returns FinePredict analysis-entry URL with automatic comparison enabled only for a pair.
  */
 export function buildFinePredictAnalysisUrl(
   marketUrl: string,
@@ -44,6 +44,7 @@ export function buildFinePredictAnalysisUrl(
       FINEPREDICT_COMPARISON_URL_PARAMETER,
       comparisonMarketUrl,
     );
+    destination.searchParams.set("analyze", "1");
   }
   return destination.toString();
 }

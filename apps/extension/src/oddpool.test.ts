@@ -72,7 +72,7 @@ describe("Oddpool comparison actions", () => {
     const button = document.querySelector<HTMLButtonElement>(
       `[${ODDPOOL_COMPARE_ACTION_ATTRIBUTE}]`,
     );
-    expect(button?.textContent).toBe("Compare");
+    expect(button?.textContent).toBe("⚖️ Compare");
 
     fireEvent.click(button as HTMLButtonElement);
     expect(openComparison).toHaveBeenCalledTimes(1);
@@ -83,7 +83,7 @@ describe("Oddpool comparison actions", () => {
     expect(destination.searchParams.get("comparisonMarketUrl")).toBe(
       "https://kalshi.com/markets/example/example-contract",
     );
-    expect(destination.searchParams.has("analyze")).toBe(false);
+    expect(destination.searchParams.get("analyze")).toBe("1");
   });
 
   it("does not add a comparison for unsupported venue pairs", () => {

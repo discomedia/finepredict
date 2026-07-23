@@ -1,6 +1,12 @@
 import type { MarketSearchPair, MarketSearchResult } from "@finepredict/shared";
 import { ArrowRight, Link2, Search } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
@@ -51,6 +57,37 @@ export function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
+  const hasStartedAutomaticComparison = useRef(false);
+  const shouldStartAutomaticComparison = useRef(
+    new URLSearchParams(location.search).get("analyze") === "1" &&
+      urls.every((url) => url.trim().length > 0),
+  ).current;
+
+  /**
+   * Creates a report for exactly two selected contracts.
+   *
+   * @param submittedUrls - Trimmed Polymarket and Kalshi market URLs.
+   * @returns Promise resolved after report navigation or error display.
+   */
+  const submitComparison = useCallback(
+    async (submittedUrls: string[]): Promise<void> => {
+      setError(null);
+      setIsSubmitting(true);
+      try {
+        const report = await createReport({ urls: submittedUrls });
+        await navigate(`/reports/${report.slug}`);
+      } catch (caughtError) {
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "FinePredict could not analyze this market.",
+        );
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [navigate],
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -106,6 +143,37 @@ export function HomePage() {
     };
   }, [searchTerm]);
 
+  useEffect(() => {
+    if (
+      !shouldStartAutomaticComparison ||
+      hasStartedAutomaticComparison.current
+    ) {
+      return;
+    }
+    const submittedUrls = urls.map((url) => url.trim()).filter(Boolean);
+    if (submittedUrls.length !== 2) {
+      return;
+    }
+    hasStartedAutomaticComparison.current = true;
+    const consumedSearchParameters = new URLSearchParams(location.search);
+    consumedSearchParameters.delete("analyze");
+    void navigate(
+      {
+        pathname: location.pathname,
+        search: consumedSearchParameters.toString(),
+      },
+      { replace: true },
+    );
+    void submitComparison(submittedUrls);
+  }, [
+    location.pathname,
+    location.search,
+    navigate,
+    shouldStartAutomaticComparison,
+    submitComparison,
+    urls,
+  ]);
+
   /**
    * Creates a report and navigates directly to its permanent share page.
    *
@@ -119,20 +187,7 @@ export function HomePage() {
       setError("Choose or paste both market URLs to compare their contracts.");
       return;
     }
-    setError(null);
-    setIsSubmitting(true);
-    try {
-      const report = await createReport({ urls: submittedUrls });
-      await navigate(`/reports/${report.slug}`);
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "FinePredict could not analyze this market.",
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
+    await submitComparison(submittedUrls);
   }
 
   /**
