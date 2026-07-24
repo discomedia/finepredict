@@ -11,6 +11,8 @@ import { ZodError } from "zod";
 
 import type { AppConfig } from "./config.js";
 import type { AuthRuntime } from "./auth.js";
+import { createArbitrageRouter } from "./arbitrage/router.js";
+import type { ArbitrageRuntime } from "./arbitrage/runtime.js";
 import {
   ProductAccessError,
   type ProductStore,
@@ -40,6 +42,7 @@ import { ReportService } from "./report-service.js";
 
 /** Dependencies used to construct the HTTP application. */
 export interface CreateAppDependencies {
+  arbitrageRuntime?: ArbitrageRuntime;
   authRuntime?: AuthRuntime | null;
   billingService?: BillingService;
   config: AppConfig;
@@ -165,6 +168,13 @@ export function createApp(dependencies: CreateAppDependencies): Express {
   app.get("/api/openapi.json", (_request, response) => {
     response.json(createOpenApiDocument(dependencies.config.apiUrl));
   });
+
+  if (dependencies.arbitrageRuntime) {
+    app.use(
+      "/api/arbitrage",
+      createArbitrageRouter(dependencies.arbitrageRuntime),
+    );
+  }
 
   app.get("/api/reports", async (_request, response, next) => {
     try {

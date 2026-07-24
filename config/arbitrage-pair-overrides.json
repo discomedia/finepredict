@@ -1,0 +1,451 @@
+[
+  {
+    "kalshiMarketId": "KXNHL-27-TOR",
+    "polymarketMarketId": "0xcb9116ea1fde38d97fc052a047d0e7fe7e6ab2f35aa44fad8cdb2be864aad8a9",
+    "verified": false,
+    "note": "Rejected: Polymarket has explicit multi-winner alphabetical and cancellation/postponement-to-Other rules that are not present in Kalshi's rules."
+  },
+  {
+    "kalshiMarketId": "KXNHL-27-NJ",
+    "polymarketMarketId": "0xc6ade558a7c8ec5afcca82e60cc84b359256aaaab1ebfb1e975bad4b707f4e73",
+    "verified": false,
+    "note": "Rejected: Polymarket has explicit multi-winner alphabetical and cancellation/postponement-to-Other rules that are not present in Kalshi's rules."
+  },
+  {
+    "kalshiMarketId": "KXNHL-27-VGK",
+    "polymarketMarketId": "0x7d2a04eeda19a37bc753fc2d038975599dc7cfa472a572cac64aef8e8927e73a",
+    "verified": false,
+    "note": "Rejected: Polymarket has explicit multi-winner alphabetical and cancellation/postponement-to-Other rules that are not present in Kalshi's rules."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXNHL-27",
+    "polymarketEventId": "nhl-2027-champion-20260612185656162",
+    "verified": false,
+    "note": "Rejected event family: Polymarket has explicit multi-winner alphabetical and cancellation/postponement-to-Other rules that are not present in Kalshi's rules."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXCPICOMBO-26JULB",
+    "polymarketEventId": "core-cpi-mom-july-2026-20260705181328287",
+    "verified": false,
+    "note": "Rejected event family: Kalshi requires both headline and core CPI conditions, while Polymarket resolves only the exact core CPI outcome."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXCPICOMBO-26JUL",
+    "polymarketEventId": "core-cpi-mom-july-2026-20260705181328287",
+    "verified": false,
+    "note": "Rejected event family: Kalshi requires both headline and core CPI conditions, while Polymarket resolves only the exact core CPI outcome."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXEMERCUTS-26",
+    "polymarketEventId": "how-many-fed-rate-cuts-in-2026",
+    "verified": false,
+    "note": "Rejected event family: Kalshi counts only emergency-meeting cuts, while Polymarket counts scheduled and emergency cuts."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXRATECUTCOUNT-26DEC31",
+    "polymarketEventId": "how-many-fed-rate-cuts-in-2026",
+    "verified": false,
+    "note": "Rejected event family: Polymarket explicitly counts cuts of 1-24 basis points as one cut, while Kalshi defines one cut as 25 basis points."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXESPYS-26BTP",
+    "polymarketEventId": "2026-espy-awards-best-tennis-player-20260706185628873",
+    "verified": false,
+    "note": "Rejected event family: Polymarket has explicit no-winner and tie-breaking rules that are not present in Kalshi's market rules."
+  },
+  {
+    "kalshiMarketId": "KXFEDDECISION-26JUL-C26",
+    "polymarketMarketId": "0x3d675f1c88099a57c12abca632cf926be1bf430125168321de06234e9930fe1a",
+    "verified": false,
+    "note": "Rejected after direct rule review: Kalshi's contract text resolves on a 25bp cut, while this Polymarket contract resolves on a 50bp-or-greater cut."
+  },
+  {
+    "kalshiMarketId": "KXFEDDECISION-26JUL-C25",
+    "polymarketMarketId": "0x4ede078cae84a5877ac32d7fb48811e5c23549a1904b7df06ff7935c6d79d831",
+    "verified": true,
+    "note": "Verified 2026-07-16: both contracts resolve on the July 28-29, 2026 FOMC upper-bound target-rate change being a 25bp cut; both use the scheduled-meeting/no-change fallback."
+  },
+  {
+    "kalshiMarketId": "KXFEDDECISION-26JUL-H0",
+    "polymarketMarketId": "0x8bf1c1536ecb1c08fe13c6b71e8ab1f58bf3461c4cb79f5f1679f869a06aef86",
+    "verified": true,
+    "note": "Verified 2026-07-16: both contracts resolve on no upper-bound target-rate change at the July 28-29, 2026 FOMC meeting, including the scheduled-meeting/no-change fallback."
+  },
+  {
+    "kalshiMarketId": "KXFEDDECISION-26JUL-H25",
+    "polymarketMarketId": "0xb5c0abeecb5502e6e8d83155c27819174d8317af3c425c3afc5a8c45257a3793",
+    "verified": true,
+    "note": "Verified 2026-07-16: both contracts resolve on the July 28-29, 2026 FOMC upper-bound target-rate change being a 25bp increase."
+  },
+  {
+    "kalshiMarketId": "KXFEDDECISION-26JUL-H26",
+    "polymarketMarketId": "0x2a28cc33492516116690a20d290f9922acbe0ed367ff52a6082154474c7f2971",
+    "verified": true,
+    "note": "Verified 2026-07-16: Kalshi's greater-than-25bp July hike bucket and Polymarket's 50bp-or-greater rounded bucket have the same outcome mapping for the stated FOMC rate-change rules."
+  },
+  {
+    "kalshiMarketId": "KXGDP-26JUL30-T3.5",
+    "polymarketMarketId": "0x2a48c165b2f8792429afe26c4ef2ec2af68889c77c4c9e2627ffac7ef41e589b",
+    "verified": true,
+    "note": "Verified 2026-07-16: both contracts use the BEA's seasonally adjusted, annualized Q2 2026 Advance Estimate and an above-3.5% threshold; the published one-decimal value makes the stated bracket treatment equivalent."
+  },
+  {
+    "kalshiMarketId": "KXFEDDECISION-26SEP-C26",
+    "polymarketMarketId": "0x5e464d85eb49f22d876f3ed6168a7db5e2288e9ae1eb91effd2758e994676f86",
+    "verified": false,
+    "note": "Rejected after direct rule review: Kalshi's contract text resolves on a 25bp cut, while this Polymarket contract resolves on a 50bp-or-greater cut."
+  },
+  {
+    "kalshiMarketId": "KXFEDDECISION-26SEP-C25",
+    "polymarketMarketId": "0xac02cbb049e46d6a3627c0fdf52fa554982a9025d45968207b362acb6ca4b830",
+    "verified": true,
+    "note": "Verified 2026-07-16: both contracts resolve on the September 15-16, 2026 FOMC upper-bound target-rate change being a 25bp cut; both use the scheduled-meeting/no-change fallback."
+  },
+  {
+    "kalshiMarketId": "KXFEDDECISION-26SEP-H0",
+    "polymarketMarketId": "0xa3b36b2d6104d34af4e6c6215fc818e43352e78a748fbfb0b85e3a35f71dec9a",
+    "verified": true,
+    "note": "Verified 2026-07-16: both contracts resolve on no upper-bound target-rate change at the September 15-16, 2026 FOMC meeting, including the scheduled-meeting/no-change fallback."
+  },
+  {
+    "kalshiMarketId": "KXFEDDECISION-26SEP-H25",
+    "polymarketMarketId": "0x876506d8b2bd7a0d3fa4fe18c024eee6e1dd81ee24c26795dadd6cfe4a7b5d0d",
+    "verified": true,
+    "note": "Verified 2026-07-16: both contracts resolve on the September 15-16, 2026 FOMC upper-bound target-rate change being a 25bp increase."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXEUROVISIONPARTICIPANTS-27",
+    "polymarketEventId": "eurovision-2027-participants",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi requires the country to perform a numbered competition entry, while Polymarket resolves from inclusion in the first official participant list even after a later withdrawal."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXNEXTISRAELPM-45JAN01",
+    "polymarketEventId": "who-will-be-the-next-prime-minister-of-israel-after-the-next-election",
+    "verified": false,
+    "classification": "relative_value",
+    "settlementRisks": [
+      "Kalshi counts the first new officeholder after issuance, including an acting or interim appointment; Polymarket requires a formally sworn-in non-caretaker Prime Minister after an election."
+    ],
+    "note": "Relative-value review 2026-07-24: the candidate identity aligns, but the triggering succession event and caretaker treatment differ materially."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXIPO-26",
+    "polymarketEventId": "ipos-before-2027",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi resolves when an IPO is confirmed, priced, or assigned a ticker, while Polymarket requires the first public stock sale to be completed."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXARREST-27JAN",
+    "polymarketEventId": "who-will-be-arrested-before-2027",
+    "verified": false,
+    "note": "Rejected 2026-07-24 from Kalshi's authoritative contract terms: Kalshi excludes house arrest and electronic monitoring without physical custody, while Polymarket explicitly counts either."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXARREST-27JAN",
+    "polymarketEventId": "obama-arrested-before-2027",
+    "verified": false,
+    "note": "Rejected 2026-07-24 from Kalshi's authoritative contract terms: Kalshi excludes house arrest and electronic monitoring without physical custody, while Polymarket explicitly counts either."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXROLEINPRODUCTIONDOOMSDAY",
+    "polymarketEventId": "which-characters-will-appear-in-avengers-doomsday",
+    "verified": false,
+    "classification": "near_arbitrage",
+    "settlementRisks": [
+      "Kalshi's production-role contract remains open through 2027, while Polymarket uses a June 30, 2027 fallback deadline."
+    ],
+    "note": "Near-arbitrage review 2026-07-24: the named character and production criterion align, but the fallback deadlines can produce divergent payouts."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXBOND-30",
+    "polymarketEventId": "next-james-bond-actor-398",
+    "verified": false,
+    "note": "Rejected 2026-07-24 from Kalshi's authoritative contract terms: Kalshi asks for an announcement before January 2030 and can pay multiple simultaneously announced actors, while Polymarket uses a December 31, 2026 deadline and one event outcome."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXBTCVSGOLD-26",
+    "polymarketEventId": "will-bitcoin-outperform-gold-in-2026",
+    "verified": false,
+    "note": "Rejected 2026-07-24 from Kalshi's authoritative contract terms: Kalshi uses CF BRTI and ICE benchmark observations and resolves a tie No, while Polymarket uses TradingView BTC/USDT and XAU/USD candles and splits a tie."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXVANCOUVERMAYOR-26OCT17",
+    "polymarketEventId": "vancouver-mayoral-election-winner",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi can wait for the declared winner to take office or a scheduled inauguration for up to two years, while Polymarket resolves Other if the result is not known by June 30, 2027."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXCEARAGOV-26OCT04",
+    "polymarketEventId": "cear-governor-election-winner",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi can wait for the declared winner to take office or a scheduled inauguration for up to two years, while Polymarket resolves Other if the result is not known by June 30, 2027."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXBIGBROTHER-26DEC31",
+    "polymarketEventId": "big-brother-season-28-winner-20260708173711844",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi splits payout among tied winners, while Polymarket resolves a tie to the alphabetically first listed contestant."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXNEWGLENN-262",
+    "polymarketEventId": "blue-origin-new-glenn-launch-in-2026",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi requires the launch before November 2026, while Polymarket covers the full 2026 calendar year."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXRUNBYMIDTERM-26NOV03",
+    "polymarketEventId": "will-jake-paul-announce-a-run-for-public-office-in-2026",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi requires elected office in the 2026 election before November 3, while Polymarket covers filing or formally announcing a run for any US office through December 31."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXOTTAWAMAYOR-26OCT26",
+    "polymarketEventId": "ottawa-mayoral-election-winner",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi can wait for the declared winner to take office or a scheduled inauguration for up to two years, while Polymarket resolves Other if the result is not known by June 30, 2027."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXMINASGOV-26OCT04",
+    "polymarketEventId": "minas-gerais-governor-election-winner",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi can wait for the declared winner to take office or a scheduled inauguration for up to two years, while Polymarket resolves Other if the result is not known by June 30, 2027."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXALBUMRELEASE-26",
+    "polymarketEventId": "which-artists-will-release-new-albums-in-2026",
+    "verified": false,
+    "note": "Rejected 2026-07-24 from Kalshi's authoritative contract terms: Kalshi's new-album definition includes original singles and EPs, while Polymarket requires an album and applies a 50%-new-tracks test."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXTIME-26",
+    "polymarketEventId": "time-person-of-the-year-2026",
+    "verified": false,
+    "note": "Rejected 2026-07-24 from Kalshi's authoritative contract terms: Kalshi can wait until one year after 2026 ends, while Polymarket resolves No if TIME has not announced by June 30, 2027."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXBALLONDOR-26",
+    "polymarketEventId": "ballon-dor-winner-2026",
+    "verified": false,
+    "note": "Rejected 2026-07-24 from Kalshi's authoritative contract terms: Kalshi splits a tied-winner payout and can wait until one year after 2026, while Polymarket uses a December 31, 2026 Other fallback."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXNEWOUTBREAK-P-26",
+    "polymarketEventId": "hantavirus-pandemic-in-2026",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi resolves Yes for any disease becoming a pandemic, while Polymarket requires an explicit WHO characterization of Hantavirus."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXNEWOUTBREAK-P-26",
+    "polymarketEventId": "ebola-pandemic-in-2026",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi resolves Yes for any disease becoming a pandemic, while Polymarket requires an explicit WHO characterization of Ebola."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXPUTINDJTLOCATION-29",
+    "polymarketEventId": "where-will-trump-and-putin-meet-next-678",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi covers the first meeting through 2028 after a specified 2025 meeting, while Polymarket covers the next meeting only through December 31, 2026."
+  },
+  {
+    "kalshiMarketId": "KXFLPRIMARY-06R26-ABAK",
+    "polymarketMarketId": "0x9fe6426a516aca90fc11d56ee4a0e43d911e2b999d29f1b0eda1e27d724c8b2c",
+    "verified": true,
+    "note": "Verified 2026-07-24: both contracts resolve on Aaron Baker being the first Republican nominee for the 2026 FL-06 election, retain the first nominee after replacement, and use election day as the no-nominee fallback."
+  },
+  {
+    "kalshiMarketId": "KXMI13D-26-DMCK",
+    "polymarketMarketId": "0x2cfbd8aabc3519021dc16ab0c7e0f42b0fdac191e64bcc3c42c2319c4c0117f3",
+    "verified": true,
+    "note": "Verified 2026-07-24: both contracts resolve on Donavan McKinney being the first Democratic nominee for the 2026 MI-13 election, retain the first nominee after replacement, and use election day as the no-nominee fallback."
+  },
+  {
+    "kalshiMarketId": "KXMIPRIMARY-01R26-MDEN",
+    "polymarketMarketId": "0xa255546a12b3794795a37e669726454a6bab4bb0cfc167d5bf90ef81a7a15cf3",
+    "verified": true,
+    "note": "Verified 2026-07-24: both contracts resolve on Matthew DenOtter being the first Republican nominee for the 2026 MI-01 election, retain the first nominee after replacement, and use election day as the no-nominee fallback."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXHOUSERACE-WA05-26",
+    "polymarketEventId": "wa-05-house-election-winner",
+    "verified": false,
+    "classification": "near_arbitrage",
+    "settlementRisks": [
+      "Kalshi settles on the party of the House member sworn in for the 2027 term, while Polymarket settles on the party of the reported 2026 election winner."
+    ],
+    "note": "Near-arbitrage review 2026-07-24: the ordinary election outcome agrees, but death, withdrawal, disqualification, or replacement before swearing-in can make both hedged legs lose."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXCA11PERSON-26",
+    "polymarketEventId": "ca-11-house-election-winner-individual-20260710015446690",
+    "verified": false,
+    "note": "Rejected 2026-07-24 from Kalshi's authoritative contract terms: Kalshi can disqualify a candidate after winning but before expiration, while Polymarket resolves to the reported election winner."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXCLOSESTSENATE-27JAN03",
+    "polymarketEventId": "closest-senate-race-20260626184244519",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi splits identical margins among tied states and uses a January 3 results cutoff, while Polymarket selects the alphabetically first state and includes later runoffs."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXCLOSESTGOVERNOR-27JAN20",
+    "polymarketEventId": "closest-governors-race-20260629182258067",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi splits identical margins among tied states and uses a January results cutoff, while Polymarket applies a one-winner tie-break and different fallback rules."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXCHESSWORLDCHAMPION-CHESS26",
+    "polymarketEventId": "2026-world-chess-championship-winner",
+    "verified": false,
+    "note": "Rejected 2026-07-24 after direct rule review: Kalshi can wait through 2028 for the champion, while Polymarket resolves Other if no winner is declared by June 30, 2027."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXOSCARNOMPIC-27",
+    "polymarketEventId": "oscars-2026-best-picture-nominations-167",
+    "verified": false,
+    "classification": "near_arbitrage",
+    "settlementRisks": [
+      "Polymarket resolves No if no nominations are declared by March 14, 2027; Kalshi's nomination contract remains open through December 31, 2027."
+    ],
+    "note": "Near-arbitrage review 2026-07-24: the film, award edition, category, and ordinary nomination outcome align, but the no-nominations fallback deadlines differ."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXOSCARNOMACTO-27",
+    "polymarketEventId": "oscars-2026-best-actor-nominations-892",
+    "verified": false,
+    "classification": "near_arbitrage",
+    "settlementRisks": [
+      "Polymarket resolves No if no nominations are declared by March 14, 2027; Kalshi's nomination contract remains open through December 31, 2027."
+    ],
+    "note": "Near-arbitrage review 2026-07-24: the actor, award edition, category, and ordinary nomination outcome align, but the no-nominations fallback deadlines differ."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXBRSENMOSTSEATS-26OCT04",
+    "polymarketEventId": "next-brazil-senate-election-most-seats-won",
+    "verified": false,
+    "classification": "mismatch",
+    "settlementRisks": [
+      "Kalshi ranks parties by total Senate seats after the election, including uncontested seats; Polymarket counts only seats contested in the 2026 election."
+    ],
+    "note": "Mismatch review 2026-07-24: Oddpool's displayed PL and MDB rows compare different seat-count propositions and are not arbitrage."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXLEADERMLBKS-26",
+    "polymarketEventId": "mlb-strikeouts-leader-pitcher",
+    "verified": false,
+    "classification": "near_arbitrage",
+    "settlementRisks": [
+      "Kalshi proportionally splits an undeclared exact tie; Polymarket applies innings, ERA, walks, and alphabetical tie-breakers to select one pitcher."
+    ],
+    "note": "Near-arbitrage review 2026-07-24: the season and strikeout-leader proposition align, but an exact official tie produces different payouts."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXMLBALMOTY-26",
+    "polymarketEventId": "mlb-al-manager-of-the-year",
+    "verified": false,
+    "classification": "near_arbitrage",
+    "settlementRisks": [
+      "Polymarket specifies an alphabetical tie-break and a December 31, 2026 cancellation fallback that are not stated in Kalshi's market rules."
+    ],
+    "note": "Near-arbitrage review 2026-07-24: the named 2026 AL Manager of the Year winner aligns under ordinary settlement, with low-probability tie and cancellation divergence."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KXEBOLACOUNTRY-27",
+    "polymarketEventId": "which-countries-will-have-an-ebola-case-in-2026",
+    "verified": false,
+    "classification": "near_arbitrage",
+    "settlementRisks": [
+      "Kalshi requires an officially reported confirmed human case; Polymarket also permits overwhelming credible-reporting consensus and describes any active confirmed infection."
+    ],
+    "note": "Near-arbitrage review 2026-07-24: the country, confirmed Ebola case, territorial diagnosis, and 2026 deadline align under ordinary settlement, but the acceptable resolution-source and qualifying-case wording differ."
+  },
+  {
+    "kalshiMarketId": "*",
+    "polymarketMarketId": "*",
+    "kalshiEventId": "KX1SONG-DEC2626",
+    "polymarketEventId": "which-artists-will-have-a-billboard-1-song-this-year",
+    "verified": false,
+    "classification": "near_arbitrage",
+    "settlementRisks": [
+      "Kalshi counts a listed artist's featured appearance while Polymarket counts only primary or equally credited primary artists.",
+      "Kalshi's final included chart is the week of December 26, 2026; Polymarket includes the chart based on December 25–31 data and titled January 9, 2027."
+    ],
+    "note": "Near-arbitrage review 2026-07-24: the named artist and ordinary 2026 Billboard Hot 100 number-one outcome align, but feature attribution and the final included chart can cause settlement divergence."
+  }
+]

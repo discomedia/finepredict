@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 
 import { AccountPage } from "./pages/AccountPage.js";
+import { ArbitragePage } from "./pages/ArbitragePage.js";
 import { DeveloperPage } from "./pages/DeveloperPage.js";
 import { DisputeDetailPage } from "./pages/DisputeDetailPage.js";
 import { DisputesPage } from "./pages/DisputesPage.js";
@@ -51,6 +52,7 @@ export function App() {
           </Link>
           <nav className="site-nav" aria-label="Primary navigation">
             <Link to="/">Analyze</Link>
+            <Link to="/arbitrage">Arbitrage</Link>
             <Link to="/disputes">Disputes</Link>
             <Link to="/watchlists">Watchlists</Link>
             <Link to="/developers">API</Link>
@@ -77,6 +79,7 @@ export function App() {
       <main>
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/arbitrage" element={<ArbitragePage />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="/account/login" element={<LoginPage />} />
           <Route path="/developers" element={<DeveloperPage />} />

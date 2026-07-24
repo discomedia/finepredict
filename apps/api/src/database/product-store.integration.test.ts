@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import "../load-environment.js";
 import { MonitoringStore } from "../monitoring/store.js";
+import { normalizeDatabaseUrlSslMode } from "../config.js";
 import { createDatabaseResources } from "./client.js";
 import { ProductStore } from "./product-store.js";
 import {
@@ -21,7 +22,8 @@ if (!databaseUrl) {
     `FinePredict integration tests: DATABASE_URL is required in the root .env.`,
   );
 }
-const resources = createDatabaseResources(databaseUrl);
+const normalizedDatabaseUrl = normalizeDatabaseUrlSslMode(databaseUrl);
+const resources = createDatabaseResources(normalizedDatabaseUrl);
 const userId = crypto.randomUUID();
 const freeUserId = crypto.randomUUID();
 const externalId = `integration-market-${crypto.randomUUID()}`;
@@ -291,10 +293,13 @@ describe("Neon product persistence", () => {
       productStore.revokeApiKey(freeUserId, secondKey.apiKeyId),
     ).resolves.toBe(true);
     await expect(productStore.findApiKeyByHash(secondHash)).resolves.toBeNull();
-  });
+  }, 15_000);
 
   it("permits only one advisory-locked monitor owner", async () => {
-    const pool = new Pool({ connectionString: databaseUrl, max: 2 });
+    const pool = new Pool({
+      connectionString: normalizedDatabaseUrl,
+      max: 2,
+    });
     const first = await pool.connect();
     const second = await pool.connect();
     const lockName = `finepredict-integration-${crypto.randomUUID()}`;

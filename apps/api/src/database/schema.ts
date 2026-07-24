@@ -2,11 +2,13 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   date,
+  doublePrecision,
   index,
   integer,
   jsonb,
   pgSchema,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -459,9 +461,104 @@ export const apiIdempotency = pgTable(
   ],
 );
 
+/** Current active Kalshi and Polymarket catalogs used by arbitrage discovery. */
+export const arbitrageMarkets = pgTable(
+  "arbitrage_markets",
+  {
+    venue: text("venue").notNull(),
+    marketId: text("market_id").notNull(),
+    eventId: text("event_id").notNull(),
+    category: text("category").notNull(),
+    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
+    refreshedAt: timestamp("refreshed_at", { withTimezone: true }).notNull(),
+    contentHash: text("content_hash").notNull(),
+    payload: jsonb("payload").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.venue, table.marketId],
+      name: "arbitrage_markets_primary",
+    }),
+    index("arbitrage_markets_category_idx").on(table.category, table.venue),
+  ],
+);
+
+/** Current post-fee opportunities produced by the bounded scanner. */
+export const arbitrageOpportunities = pgTable(
+  "arbitrage_opportunities",
+  {
+    opportunityId: text("opportunity_id").primaryKey(),
+    strategy: text("strategy").notNull(),
+    status: text("status").notNull(),
+    relationship: text("relationship").notNull(),
+    category: text("category").notNull(),
+    netEdgeDollarsPerShare: doublePrecision(
+      "net_edge_dollars_per_share",
+    ).notNull(),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    scanId: text("scan_id").notNull(),
+    payload: jsonb("payload").notNull(),
+  },
+  (table) => [
+    index("arbitrage_opportunities_list_idx").on(
+      table.strategy,
+      table.status,
+      table.category,
+      table.netEdgeDollarsPerShare,
+    ),
+    index("arbitrage_opportunities_relationship_idx").on(
+      table.relationship,
+      table.status,
+      table.netEdgeDollarsPerShare,
+    ),
+  ],
+);
+
+/** Auditable summary for one complete catalog match and book scan. */
+export const arbitrageScans = pgTable("arbitrage_scans", {
+  scanId: text("scan_id").primaryKey(),
+  completedAt: timestamp("completed_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  marketCount: integer("market_count").notNull(),
+  lexicalCandidateCount: integer("lexical_candidate_count").notNull(),
+  freshBookCandidateCount: integer("fresh_book_candidate_count").notNull(),
+  failedCandidateCount: integer("failed_candidate_count").notNull(),
+  externalRequestCount: integer("external_request_count").notNull(),
+  databaseWriteCount: integer("database_write_count").notNull(),
+  opportunityCount: integer("opportunity_count").notNull(),
+});
+
+/** Persisted recurring-service state and exact network/database cost metrics. */
+export const arbitrageServiceRuns = pgTable(
+  "arbitrage_service_runs",
+  {
+    runId: text("run_id").primaryKey(),
+    jobType: text("job_type").notNull(),
+    status: text("status").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    externalRequestCount: integer("external_request_count").notNull(),
+    databaseWriteCount: integer("database_write_count").notNull(),
+    candidateCount: integer("candidate_count").notNull(),
+    opportunityCount: integer("opportunity_count").notNull(),
+    errorMessage: text("error_message"),
+  },
+  (table) => [
+    index("arbitrage_service_runs_latest_idx").on(
+      table.jobType,
+      table.startedAt,
+    ),
+  ],
+);
+
 /** Database schema exported for Drizzle client construction. */
 export const databaseSchema = {
   alertEvents,
+  arbitrageMarkets,
+  arbitrageOpportunities,
+  arbitrageScans,
+  arbitrageServiceRuns,
   apiIdempotency,
   apiKeys,
   apiUsageDaily,

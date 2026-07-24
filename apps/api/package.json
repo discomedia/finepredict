@@ -14,7 +14,7 @@
     "monitor:dev": "tsx src/monitor.ts",
     "start": "node dist/server.js",
     "test": "vitest run --exclude '**/*.integration.test.ts'",
-    "test:integration": "vitest run src/app.integration.test.ts src/auth.integration.test.ts src/database/product-store.integration.test.ts",
+    "test:integration": "vitest run --maxWorkers=1 --fileParallelism=false src/app.integration.test.ts src/auth.integration.test.ts src/database/product-store.integration.test.ts src/arbitrage/opportunities/opportunity-repository.integration.test.ts",
     "pretypecheck": "pnpm --filter @finepredict/shared build",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

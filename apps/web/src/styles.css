@@ -2659,3 +2659,385 @@ main {
     padding: 18px;
   }
 }
+
+/* Arbitrage scanner */
+
+.arbitrage-page {
+  width: min(1440px, calc(100% - 48px));
+}
+
+.arbitrage-live-state {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.arbitrage-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #9a817c;
+}
+
+.arbitrage-live-state.connected .arbitrage-live-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 4px rgba(31, 111, 78, 0.12);
+}
+
+.arbitrage-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 24px 0 18px;
+  border: 1px solid var(--line-dark);
+  background: var(--surface);
+}
+
+.arbitrage-metrics article {
+  min-width: 0;
+  padding: 20px 22px;
+}
+
+.arbitrage-metrics article + article {
+  border-left: 1px solid var(--line);
+}
+
+.arbitrage-metrics span,
+.arbitrage-panel-heading p,
+.arbitrage-subvalue,
+.arbitrage-risk {
+  color: var(--muted);
+}
+
+.arbitrage-metrics span {
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.arbitrage-metrics strong {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.arbitrage-panel {
+  overflow: hidden;
+  border: 1px solid var(--line-dark);
+  background: var(--surface);
+}
+
+.arbitrage-panel-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 25px 26px 22px;
+}
+
+.arbitrage-panel-heading h2 {
+  margin: 5px 0 6px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 27px;
+  font-weight: 500;
+}
+
+.arbitrage-panel-heading p {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.arbitrage-panel-heading .secondary-button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.arbitrage-filters {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  padding: 0 26px 22px;
+}
+
+.arbitrage-filters label {
+  display: grid;
+  gap: 6px;
+}
+
+.arbitrage-filters label > span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.arbitrage-filters select {
+  min-width: 170px;
+  height: 39px;
+  padding: 0 34px 0 11px;
+  border: 1px solid var(--line-dark);
+  border-radius: 0;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.arbitrage-review-toggle {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  min-height: 39px;
+  margin-left: auto;
+}
+
+.arbitrage-review-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--green);
+}
+
+.arbitrage-review-toggle span {
+  color: var(--ink) !important;
+  font-size: 10px !important;
+}
+
+.arbitrage-table-wrap {
+  overflow-x: auto;
+  border-top: 1px solid var(--line-dark);
+}
+
+.arbitrage-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.arbitrage-table th {
+  padding: 12px 13px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.arbitrage-table th:first-child {
+  width: 34%;
+  padding-left: 26px;
+  text-align: left;
+}
+
+.arbitrage-table th:nth-child(2) {
+  width: 17%;
+  text-align: left;
+}
+
+.arbitrage-table td {
+  padding: 18px 13px;
+  vertical-align: top;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  text-align: right;
+}
+
+.arbitrage-table tbody tr:first-child td {
+  border-top: 0;
+}
+
+.arbitrage-table tbody tr:hover {
+  background: #fbfcfa;
+}
+
+.arbitrage-table td:first-child {
+  padding-left: 26px;
+  text-align: left;
+}
+
+.arbitrage-table td:nth-child(2) {
+  text-align: left;
+}
+
+.arbitrage-contract-title {
+  display: block;
+  margin: 0 0 7px;
+  line-height: 1.35;
+}
+
+.arbitrage-contract-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.arbitrage-contract-links a {
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.arbitrage-contract-links a:hover {
+  text-decoration: underline;
+}
+
+.arbitrage-badge {
+  display: inline-flex;
+  margin-bottom: 7px;
+  padding: 3px 6px;
+  background: var(--green-soft);
+  color: var(--green);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.arbitrage-badge.relative_value {
+  background: #f5ead1;
+  color: #8a621c;
+}
+
+.arbitrage-badge.unreviewed {
+  background: #f2dfda;
+  color: #9f493a;
+}
+
+.arbitrage-risk {
+  display: block;
+  max-width: 460px;
+  margin-top: 9px;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.arbitrage-trade-leg {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.65;
+  white-space: nowrap;
+}
+
+.arbitrage-trade-leg em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.arbitrage-number {
+  font-family: var(--mono);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.arbitrage-number.positive {
+  color: var(--green);
+}
+
+.arbitrage-subvalue {
+  display: block;
+  margin-top: 5px;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.arbitrage-footnote {
+  margin: 0;
+  padding: 17px 26px;
+  border-top: 1px solid var(--line-dark);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.arbitrage-error {
+  border-right: 0;
+  border-left: 0;
+}
+
+@media (max-width: 980px) {
+  .arbitrage-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .arbitrage-metrics article:nth-child(3) {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .arbitrage-metrics article:nth-child(4) {
+    border-top: 1px solid var(--line);
+  }
+
+  .arbitrage-filters {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .arbitrage-review-toggle {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .arbitrage-page {
+    width: min(100% - 28px, 1440px);
+    padding-top: 32px;
+  }
+
+  .arbitrage-page .product-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .arbitrage-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .arbitrage-metrics article + article,
+  .arbitrage-metrics article:nth-child(3) {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .arbitrage-panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .arbitrage-panel-heading,
+  .arbitrage-filters,
+  .arbitrage-footnote {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .arbitrage-filters,
+  .arbitrage-filters label,
+  .arbitrage-filters select {
+    width: 100%;
+  }
+
+  .arbitrage-review-toggle {
+    grid-template-columns: auto 1fr;
+  }
+}

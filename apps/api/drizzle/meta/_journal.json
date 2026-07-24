@@ -43,6 +43,13 @@
       "when": 1784352132263,
       "tag": "0005_opposite_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784857568821,
+      "tag": "0006_chubby_shard",
+      "breakpoints": true
     }
   ]
 }

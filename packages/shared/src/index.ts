@@ -547,6 +547,145 @@ export const ApiErrorSchema = z.object({
 /** Structured developer API failure. */
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 
+/** Settlement relationship assigned after deterministic or manual review. */
+export const ArbitrageRelationshipSchema = z.enum([
+  "pure_arbitrage",
+  "near_arbitrage",
+  "relative_value",
+  "unreviewed",
+]);
+
+/** Settlement relationship shown by the arbitrage scanner. */
+export type ArbitrageRelationship = z.infer<typeof ArbitrageRelationshipSchema>;
+
+/** Publication state assigned to one post-fee opportunity. */
+export const ArbitrageOpportunityStatusSchema = z.enum([
+  "actionable",
+  "basis_opportunity",
+  "relative_value",
+  "review_required",
+  "below_threshold",
+]);
+
+/** Compact venue contract shown on the arbitrage page. */
+export const ArbitrageMarketSchema = z.object({
+  venue: MarketPlatformSchema,
+  marketId: z.string().min(1),
+  eventId: z.string().min(1),
+  eventTitle: z.string().min(1).optional(),
+  question: z.string().min(1),
+  marketUrl: z.url(),
+  outcomeLabel: z.string().min(1).optional(),
+  category: z.string().min(1),
+  status: z.string().min(1),
+  settlementRulesUrl: z.url().optional(),
+  endDateIso: z.string().datetime().optional(),
+  volume: z.number().nonnegative(),
+  liquidity: z.number().nonnegative(),
+});
+
+/** Current depth- and fee-aware cross-venue opportunity. */
+export const ArbitrageOpportunitySchema = z.object({
+  opportunityId: z.string().min(1),
+  strategy: z.literal("cross_venue_equivalent"),
+  status: ArbitrageOpportunityStatusSchema,
+  category: z.string().min(1),
+  matchConfidence: z.enum(["verified", "probable", "possible"]),
+  relationship: ArbitrageRelationshipSchema,
+  settlementRisks: z.array(z.string().min(1)),
+  kalshi: ArbitrageMarketSchema,
+  polymarket: ArbitrageMarketSchema,
+  direction: z.object({
+    buyYesVenue: MarketPlatformSchema,
+    buyNoVenue: MarketPlatformSchema,
+  }),
+  executableShares: z.number().positive(),
+  buyYesAveragePriceDollars: z.number().min(0).max(1),
+  buyNoAveragePriceDollars: z.number().min(0).max(1),
+  grossEdgeDollarsPerShare: z.number(),
+  feeDollarsPerShare: z.number().nonnegative(),
+  grossProfitDollars: z.number(),
+  feesDollars: z.number().nonnegative(),
+  netProfitDollars: z.number(),
+  conditionalNetProfitDollars: z.number(),
+  worstCaseSettlementDivergenceLossDollars: z.number().nonnegative(),
+  breakEvenAdverseDivergenceProbabilityPercent100: z
+    .number()
+    .min(0)
+    .max(100)
+    .optional(),
+  netEdgeDollarsPerShare: z.number(),
+  roiPercent100: z.number(),
+  observedAtIso: z.string().datetime(),
+  similarityPercent100: z.number().min(0).max(100),
+});
+
+/** One arbitrage opportunity returned to the React dashboard. */
+export type ArbitrageOpportunity = z.infer<typeof ArbitrageOpportunitySchema>;
+
+/** Bounded public opportunity-list response. */
+export const ArbitrageOpportunityListResponseSchema = z.object({
+  filters: z.object({
+    strategy: z.literal("cross_venue_equivalent").optional(),
+    category: z.string().optional(),
+    status: ArbitrageOpportunityStatusSchema.optional(),
+    relationship: ArbitrageRelationshipSchema.optional(),
+    reviewedOnly: z.boolean().optional(),
+    minimumNetEdgeDollarsPerShare: z.number().nonnegative().optional(),
+    limit: z.number().int().positive(),
+    offset: z.number().int().nonnegative(),
+  }),
+  count: z.number().int().nonnegative(),
+  opportunities: z.array(ArbitrageOpportunitySchema),
+});
+
+/** Bounded public opportunity-list response. */
+export type ArbitrageOpportunityListResponse = z.infer<
+  typeof ArbitrageOpportunityListResponseSchema
+>;
+
+/** Current arbitrage catalog and result counts. */
+export const ArbitrageSummarySchema = z.object({
+  kalshiMarketCount: z.number().int().nonnegative(),
+  polymarketMarketCount: z.number().int().nonnegative(),
+  opportunityCount: z.number().int().nonnegative(),
+  lastScanAtIso: z.string().datetime().optional(),
+});
+
+/** Current arbitrage catalog and result counts. */
+export type ArbitrageSummary = z.infer<typeof ArbitrageSummarySchema>;
+
+/** Persisted recurring scanner-job metrics. */
+export const ArbitrageServiceRunSchema = z.object({
+  runId: z.string().min(1),
+  jobType: z.enum(["discovery", "price_refresh"]),
+  status: z.enum(["running", "completed", "failed"]),
+  startedAtIso: z.string().datetime(),
+  completedAtIso: z.string().datetime().optional(),
+  externalRequestCount: z.number().int().nonnegative(),
+  databaseWriteCount: z.number().int().nonnegative(),
+  candidateCount: z.number().int().nonnegative(),
+  opportunityCount: z.number().int().nonnegative(),
+  errorMessage: z.string().min(1).optional(),
+});
+
+/** Current recurring arbitrage scheduler status. */
+export const ArbitrageServiceStatusSchema = z.object({
+  running: z.boolean(),
+  activeJob: z.enum(["discovery", "price_refresh"]).optional(),
+  discoveryIntervalSeconds: z.number().positive(),
+  priceRefreshIntervalSeconds: z.number().positive(),
+  maximumPriceRefreshPairs: z.number().int().positive(),
+  lastDiscoveryRun: ArbitrageServiceRunSchema.optional(),
+  lastPriceRefreshRun: ArbitrageServiceRunSchema.optional(),
+  connectedClientCount: z.number().int().nonnegative(),
+});
+
+/** Current recurring arbitrage scheduler status. */
+export type ArbitrageServiceStatus = z.infer<
+  typeof ArbitrageServiceStatusSchema
+>;
+
 /** Creates a paginated response schema for a typed item schema. */
 export const createPaginatedResponseSchema = <T extends z.ZodType>(
   itemSchema: T,

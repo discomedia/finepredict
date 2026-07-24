@@ -23,6 +23,7 @@ It deliberately does not create a pseudo-precise risk score. Reports show specif
 - Report-specific canonical, social, and structured metadata at the edge
 - Administrator-only model selection through the system settings page
 - Public JSON endpoints for other analytics and arbitrage tools
+- Public, fee-aware Polymarket/Kalshi arbitrage dashboard with recurring deterministic discovery
 
 ## Architecture
 
@@ -39,6 +40,14 @@ Oddpool         Full-text Polymarket and Kalshi market discovery
 ```
 
 Cross-venue discovery starts with [Oddpool event search](https://docs.oddpool.com/search/search-events), pairs semantically compatible event groups, and expands the strongest candidates through [Oddpool event markets](https://docs.oddpool.com/search/event-markets). FinePredict then aligns individual outcomes using direction, numeric thresholds, and dates; volume and liquidity only break ties between otherwise credible matches. It enriches Kalshi candidates through one public [Kalshi Get Markets API](https://docs.kalshi.com/api-reference/market/get-markets) batch request. Contract extraction uses the documented public [Polymarket Gamma API](https://docs.polymarket.com/market-data/fetching-markets) and [Kalshi Get Market API](https://docs.kalshi.com/api-reference/market/get-market). Trading credentials are not required for read-only discovery or extraction.
+
+The `/arbitrage` page is a separate deterministic scanner. It downloads the
+public Polymarket and Kalshi catalogs hourly, normalizes titles, outcomes,
+thresholds, and deadlines, and evaluates only high-confidence candidate pairs.
+It refreshes the strongest 24 persisted pairs every five minutes. Executable
+order-book asks, venue fees, gross edge, net edge, depth, and projected profit
+are stored in Postgres and streamed to the page. The scanner does not use an
+LLM, place trades, or treat a merely correlated market as risk-free arbitrage.
 
 ## Local development
 
@@ -84,6 +93,11 @@ package-level env files.
 | `VITE_API_BASE_URL`           | API origin compiled into the browser client.                                                                                                     |
 | `VITE_NEON_AUTH_URL`          | Branch-specific managed Neon Auth URL compiled into the browser client.                                                                          |
 | `FINEPREDICT_API_BASE_URL`    | API origin read by the Netlify report-metadata Edge Function.                                                                                    |
+| `ARBITRAGE_SERVICE_ENABLED`   | Enables the recurring scanner when Postgres is configured; defaults to `true`.                                                                   |
+
+The remaining `ARBITRAGE_*` variables in `.env.example` set the hourly discovery
+cadence, five-minute bounded refresh, candidate caps, similarity threshold, and
+minimum post-fee edge. Defaults are deliberately strict and network-bounded.
 
 Generate the developer API secret locally:
 
@@ -135,7 +149,8 @@ pnpm build
 
 The database-backed integration suite always uses the root `DATABASE_URL`. It
 applies pending migrations, creates uniquely identified temporary product and
-monitoring rows, and removes those rows before closing its database connections.
+monitoring rows, verifies arbitrage catalog write suppression, and removes those
+rows before closing its database connections.
 The command fails instead of silently skipping when `DATABASE_URL` is absent.
 
 To verify upstream APIs and the OpenAI path with real credentials, run the API and submit a current market URL:
@@ -165,17 +180,21 @@ endpoint supplies the specific outcome label shown as each result title.
 
 All report reads are public in the MVP.
 
-| Method | Path                        | Purpose                                                      |
-| ------ | --------------------------- | ------------------------------------------------------------ |
-| `GET`  | `/api/health/live`          | Database-free Railway liveness check                         |
-| `GET`  | `/api/meta`                 | Supported platforms and deterministic-check count            |
-| `GET`  | `/api/markets/search`       | Search one venue with `platform` and `query`                 |
-| `GET`  | `/api/markets/search-pairs` | Find aligned Polymarket and Kalshi equivalents by `query`    |
-| `POST` | `/api/reports`              | Create a report from `{ "urls": ["..."] }`                   |
-| `GET`  | `/api/reports`              | List recent public reports                                   |
-| `GET`  | `/api/reports/:slug`        | Fetch a permanent report                                     |
-| `GET`  | `/api/settings`             | Read the active model and allowed choices                    |
-| `PUT`  | `/api/settings`             | Update the model; requires an admin session or emergency key |
+| Method | Path                           | Purpose                                                      |
+| ------ | ------------------------------ | ------------------------------------------------------------ |
+| `GET`  | `/api/health/live`             | Database-free Railway liveness check                         |
+| `GET`  | `/api/meta`                    | Supported platforms and deterministic-check count            |
+| `GET`  | `/api/markets/search`          | Search one venue with `platform` and `query`                 |
+| `GET`  | `/api/markets/search-pairs`    | Find aligned Polymarket and Kalshi equivalents by `query`    |
+| `GET`  | `/api/arbitrage/opportunities` | List current post-fee cross-venue opportunities              |
+| `GET`  | `/api/arbitrage/summary`       | Return catalog and opportunity counts                        |
+| `GET`  | `/api/arbitrage/status`        | Return discovery, refresh, request, and write metrics        |
+| `GET`  | `/api/arbitrage/stream`        | Stream invalidations for live dashboard updates              |
+| `POST` | `/api/reports`                 | Create a report from `{ "urls": ["..."] }`                   |
+| `GET`  | `/api/reports`                 | List recent public reports                                   |
+| `GET`  | `/api/reports/:slug`           | Fetch a permanent report                                     |
+| `GET`  | `/api/settings`                | Read the active model and allowed choices                    |
+| `PUT`  | `/api/settings`                | Update the model; requires an admin session or emergency key |
 
 Account, watchlist, billing, dispute, and developer routes are documented by
 the generated OpenAPI document at `GET /api/openapi.json`. Developer clients use
@@ -199,8 +218,11 @@ reference `neon_auth.user(id)` with UUID foreign keys but must never create,
 alter, or drop the managed table. The checked-in migrations include product
 subscriptions, watchlists, immutable observations/snapshots, alerts, dispute
 history, API keys, account-wide free minute windows, daily usage, and Stripe
-webhook idempotency. Apply migrations to the intended database after enabling
-Neon Auth and before enabling billing or monitoring.
+webhook idempotency. The arbitrage tables retain normalized public venue
+catalogs, executable opportunities, scan metrics, and service runs. Unchanged
+catalog rows are hash-compared and are not rewritten. Apply migrations to the
+intended database after enabling Neon Auth and before enabling billing or
+monitoring.
 
 ## Monitoring
 

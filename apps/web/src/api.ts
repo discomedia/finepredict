@@ -3,6 +3,9 @@ import {
   AlertEventSchema,
   ApiKeyScopeSchema,
   ApiKeySummarySchema,
+  ArbitrageOpportunityListResponseSchema,
+  ArbitrageServiceStatusSchema,
+  ArbitrageSummarySchema,
   DisputeCaseSchema,
   FinePredictReportSchema,
   MarketPriceSnapshotsResponseSchema,
@@ -17,6 +20,10 @@ import {
   type AlertEvent,
   type ApiKeyScope,
   type ApiKeySummary,
+  type ArbitrageOpportunityListResponse,
+  type ArbitrageRelationship,
+  type ArbitrageServiceStatus,
+  type ArbitrageSummary,
   type CreateReportRequest,
   type DisputeCase,
   type FinePredictModel,
@@ -135,6 +142,100 @@ const RedirectResponseSchema = z.object({ url: z.url() });
 const MarketStatusResponseSchema = z.object({
   observation: MarketObservationSchema.nullable(),
 });
+
+/** User-selectable filters for the arbitrage opportunity page. */
+export interface ArbitrageOpportunityFilters {
+  /** Minimum post-fee edge in cents per paired share. */
+  minimumNetEdgeCents: number;
+  /** Optional reviewed relationship restriction. */
+  relationship?: ArbitrageRelationship;
+  /** Optional normalized category restriction. */
+  category?: string;
+  /** Whether provisional deterministic matches are excluded. */
+  reviewedOnly: boolean;
+}
+
+/** Arbitrage categories response schema. */
+const ArbitrageCategoriesSchema = z.object({
+  categories: z.array(z.string().min(1)),
+});
+
+/**
+ * Loads current post-fee arbitrage opportunities.
+ *
+ * @param filters - Bounded dashboard filters.
+ * @returns Current matching opportunity rows.
+ */
+export async function getArbitrageOpportunities(
+  filters: ArbitrageOpportunityFilters,
+): Promise<ArbitrageOpportunityListResponse> {
+  const query = new URLSearchParams({
+    minimumNetEdgeCents: String(filters.minimumNetEdgeCents),
+    reviewedOnly: String(filters.reviewedOnly),
+    limit: "100",
+  });
+  if (filters.relationship) {
+    query.set("relationship", filters.relationship);
+  }
+  if (filters.category) {
+    query.set("category", filters.category);
+  }
+  return ArbitrageOpportunityListResponseSchema.parse(
+    await requestJson(`/api/arbitrage/opportunities?${query.toString()}`),
+  );
+}
+
+/**
+ * Loads current catalog and stored-opportunity counts.
+ *
+ * @returns Arbitrage catalog summary.
+ */
+export async function getArbitrageSummary(): Promise<ArbitrageSummary> {
+  return ArbitrageSummarySchema.parse(
+    await requestJson("/api/arbitrage/summary"),
+  );
+}
+
+/**
+ * Loads current recurring scanner state and exact last-run cost metrics.
+ *
+ * @returns Recurring service status.
+ */
+export async function getArbitrageServiceStatus(): Promise<ArbitrageServiceStatus> {
+  return ArbitrageServiceStatusSchema.parse(
+    await requestJson("/api/arbitrage/status"),
+  );
+}
+
+/**
+ * Loads normalized categories represented by current opportunities.
+ *
+ * @returns Alphabetically sorted category keys.
+ */
+export async function getArbitrageCategories(): Promise<readonly string[]> {
+  return ArbitrageCategoriesSchema.parse(
+    await requestJson("/api/arbitrage/categories"),
+  ).categories;
+}
+
+/**
+ * Subscribes to scanner invalidations through the public SSE endpoint.
+ *
+ * @param onUpdate - Callback for status or opportunity changes.
+ * @param onConnectionChange - Callback for connection-state changes.
+ * @returns Cleanup callback that closes the stream.
+ */
+export function subscribeToArbitrageUpdates(
+  onUpdate: () => void,
+  onConnectionChange: (connected: boolean) => void,
+): () => void {
+  const eventSource = new EventSource(`${API_BASE_URL}/api/arbitrage/stream`);
+  eventSource.addEventListener("open", () => onConnectionChange(true));
+  eventSource.addEventListener("status", onUpdate);
+  eventSource.addEventListener("opportunities", onUpdate);
+  eventSource.addEventListener("error", () => onConnectionChange(false));
+  return () => eventSource.close();
+}
 
 /**
  * Creates a new FinePredict report.

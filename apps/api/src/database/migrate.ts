@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { normalizeDatabaseUrlSslMode } from "../config.js";
 import { log } from "../log.js";
 import "../load-environment.js";
 
@@ -16,7 +17,7 @@ async function runMigrations(): Promise<void> {
     throw new Error(`FinePredict migrations: DATABASE_URL is required.`);
   }
 
-  const sql = postgres(databaseUrl, { max: 1 });
+  const sql = postgres(normalizeDatabaseUrlSslMode(databaseUrl), { max: 1 });
   try {
     await migrate(drizzle(sql), { migrationsFolder: "./drizzle" });
     log("database.runMigrations", "Database migrations completed.");

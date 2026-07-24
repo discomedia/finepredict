@@ -1,4 +1,5 @@
 import { createApp } from "./app.js";
+import { createArbitrageRuntime } from "./arbitrage/runtime.js";
 import { createAuthRuntime } from "./auth.js";
 import { loadConfig } from "./config.js";
 import { createDatabaseResources } from "./database/client.js";
@@ -40,7 +41,12 @@ const authRuntime = createAuthRuntime(
   config,
   databaseResources?.database ?? null,
 );
+const arbitrageRuntime =
+  databaseResources && config.arbitrage.enabled
+    ? await createArbitrageRuntime(config, databaseResources.database)
+    : undefined;
 const app = createApp({
+  ...(arbitrageRuntime ? { arbitrageRuntime } : {}),
   authRuntime,
   billingService: new BillingService(config),
   config,
@@ -58,6 +64,7 @@ const server = app.listen(config.port, "0.0.0.0", () => {
     port: config.port,
   });
 });
+await arbitrageRuntime?.service.start(config.arbitrage.runDiscoveryOnStart);
 
 /**
  * Closes HTTP and database resources on a platform termination signal.
@@ -67,7 +74,10 @@ const server = app.listen(config.port, "0.0.0.0", () => {
  */
 async function shutdown(signal: string): Promise<void> {
   log("server.shutdown", `FinePredict API is shutting down.`, { signal });
+  arbitrageRuntime?.service.stop();
+  await arbitrageRuntime?.service.waitForIdle();
   server.close();
+  server.closeAllConnections();
   await databaseResources?.close();
   process.exit(0);
 }
