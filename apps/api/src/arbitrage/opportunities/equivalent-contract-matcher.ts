@@ -118,12 +118,13 @@ export interface EquivalentContractMatchResult {
  *
  * @param markets - Normalized native venue catalogs.
  * @param options - Similarity, edge, and network-budget caps.
- * @returns Candidate count and bounded fresh-book shortlist.
+ * @returns Candidate count and bounded fresh-book shortlist after yielding
+ * periodically so the API remains responsive during a full catalog match.
  */
-export function matchEquivalentContracts(
+export async function matchEquivalentContracts(
   markets: readonly NativeBinaryMarket[],
   options: EquivalentContractMatchOptions,
-): EquivalentContractMatchResult {
+): Promise<EquivalentContractMatchResult> {
   const kalshiMarkets = markets.filter((market) => market.venue === "kalshi");
   const polymarketMarkets = markets.filter(
     (market) => market.venue === "polymarket",
@@ -148,7 +149,18 @@ export function matchEquivalentContracts(
   }
 
   const lexicalCandidates = new Map<string, EquivalentContractCandidate>();
-  for (const kalshiMarket of kalshiMarkets) {
+  for (
+    let kalshiMarketIndex = 0;
+    kalshiMarketIndex < kalshiMarkets.length;
+    kalshiMarketIndex += 1
+  ) {
+    if (kalshiMarketIndex > 0 && kalshiMarketIndex % 100 === 0) {
+      await yieldToEventLoop();
+    }
+    const kalshiMarket = kalshiMarkets[kalshiMarketIndex];
+    if (!kalshiMarket) {
+      continue;
+    }
     const normalizedKalshi = normalizeMarketText(buildMatchText(kalshiMarket));
     const candidateIds = new Set<string>();
     const candidateTokens = [...normalizedKalshi.tokens]
@@ -408,6 +420,18 @@ export function matchEquivalentContracts(
     lexicalCandidateCount: lexicalCandidates.size,
     candidates: selected,
   };
+}
+
+/**
+ * Gives pending HTTP and timer work a chance to run during a large deterministic
+ * catalog comparison.
+ *
+ * @returns A promise resolved on the next event-loop turn.
+ */
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolvePromise) => {
+    setImmediate(resolvePromise);
+  });
 }
 
 /**

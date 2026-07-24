@@ -146,7 +146,7 @@ export class OpportunityScanner {
       .replaceAll(":", "-")
       .replace(".", "-");
     const markets = await this.repository.loadCatalog();
-    const matching = matchEquivalentContracts(markets, {
+    const matching = await matchEquivalentContracts(markets, {
       minimumSimilarityPercent100: options.minimumSimilarityPercent100,
       minimumPreliminaryGrossEdgeDollarsPerShare:
         options.minimumPreliminaryGrossEdgeDollarsPerShare,

@@ -50,8 +50,8 @@ function market(
 }
 
 describe("equivalent contract matcher", () => {
-  it("finds exact candidates without requiring volume or liquidity", () => {
-    const result = matchEquivalentContracts(
+  it("finds exact candidates without requiring volume or liquidity", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -78,8 +78,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(1);
   });
 
-  it("rejects different ordinal outcomes before book requests", () => {
-    const result = matchEquivalentContracts(
+  it("rejects different ordinal outcomes before book requests", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -105,8 +105,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("rejects subset entity names such as Milan and Inter Milan", () => {
-    const result = matchEquivalentContracts(
+  it("rejects subset entity names such as Milan and Inter Milan", async () => {
+    const result = await matchEquivalentContracts(
       [
         market("kalshi", "K-3", "Will Milan win the 2026-27 Serie A?", "Milan"),
         market(
@@ -127,7 +127,7 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("rejects reviewed event families without consuming the shortlist", () => {
+  it("rejects reviewed event families without consuming the shortlist", async () => {
     const kalshi = market(
       "kalshi",
       "K-4",
@@ -140,7 +140,7 @@ describe("equivalent contract matcher", () => {
       "Will Canada participate in Eurovision 2027?",
       "Canada",
     );
-    const result = matchEquivalentContracts([kalshi, polymarket], {
+    const result = await matchEquivalentContracts([kalshi, polymarket], {
       minimumSimilarityPercent100: 50,
       minimumPreliminaryGrossEdgeDollarsPerShare: 0,
       maximumFreshBookPairs: 10,
@@ -161,8 +161,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("rejects a generic market paired to one named disease", () => {
-    const result = matchEquivalentContracts(
+  it("rejects a generic market paired to one named disease", async () => {
+    const result = await matchEquivalentContracts(
       [
         market("kalshi", "K-5", "Pandemic in 2026?", "In 2026"),
         market(
@@ -183,8 +183,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("uses parent event titles to distinguish generic sports children", () => {
-    const result = matchEquivalentContracts(
+  it("uses parent event titles to distinguish generic sports children", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -220,8 +220,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates[0]?.polymarket.marketId).toBe("P-6");
   });
 
-  it("rejects different baseball counting statistics", () => {
-    const result = matchEquivalentContracts(
+  it("rejects different baseball counting statistics", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -247,8 +247,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("recognizes strike out phrasing as strikeouts before comparing wins", () => {
-    const result = matchEquivalentContracts(
+  it("recognizes strike out phrasing as strikeouts before comparing wins", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -274,7 +274,7 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("round-robins provisional categories inside the fixed book budget", () => {
+  it("round-robins provisional categories inside the fixed book budget", async () => {
     const sportsOne = market(
       "kalshi",
       "K-DIV-1",
@@ -293,7 +293,7 @@ describe("equivalent contract matcher", () => {
       "Will an Ebola case be reported in Canada?",
       "Canada Ebola",
     );
-    const result = matchEquivalentContracts(
+    const result = await matchEquivalentContracts(
       [
         { ...sportsOne, category: "sports" },
         { ...sportsTwo, category: "sports" },
@@ -339,9 +339,9 @@ describe("equivalent contract matcher", () => {
     ).toEqual(new Set(["sports", "health"]));
   });
 
-  it("retains settlement-risk signals for election versus sworn-in clauses", () => {
+  it("retains settlement-risk signals for election versus sworn-in clauses", async () => {
     const question = "Will the Republican Party win the WA-05 House seat?";
-    const result = matchEquivalentContracts(
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -375,9 +375,9 @@ describe("equivalent contract matcher", () => {
     );
   });
 
-  it("retains settlement-risk signals for split versus one-winner payouts", () => {
+  it("retains settlement-risk signals for split versus one-winner payouts", async () => {
     const question = "Will Maine have the closest Senate race in 2026?";
-    const result = matchEquivalentContracts(
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -410,7 +410,7 @@ describe("equivalent contract matcher", () => {
     );
   });
 
-  it("publishes reviewed low-probability divergence as near arbitrage", () => {
+  it("publishes reviewed low-probability divergence as near arbitrage", async () => {
     const kalshi = market(
       "kalshi",
       "K-10",
@@ -427,7 +427,7 @@ describe("equivalent contract matcher", () => {
       "WA-05 House winner",
       "Pays for the party of the election winner.",
     );
-    const result = matchEquivalentContracts([kalshi, polymarket], {
+    const result = await matchEquivalentContracts([kalshi, polymarket], {
       minimumSimilarityPercent100: 85,
       minimumPreliminaryGrossEdgeDollarsPerShare: 0,
       maximumFreshBookPairs: 10,
@@ -455,8 +455,8 @@ describe("equivalent contract matcher", () => {
     ]);
   });
 
-  it("aligns tightly bounded spelling aliases in child outcome names", () => {
-    const result = matchEquivalentContracts(
+  it("aligns tightly bounded spelling aliases in child outcome names", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -484,8 +484,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(1);
   });
 
-  it("rejects different party-control assignments in child labels", () => {
-    const result = matchEquivalentContracts(
+  it("rejects different party-control assignments in child labels", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -513,8 +513,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("rejects different baseball statistics even when the player aligns", () => {
-    const result = matchEquivalentContracts(
+  it("rejects different baseball statistics even when the player aligns", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -540,8 +540,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("rejects presidential versus vice-presidential nominee markets", () => {
-    const result = matchEquivalentContracts(
+  it("rejects presidential versus vice-presidential nominee markets", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -567,8 +567,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("rejects album versus song achievements", () => {
-    const result = matchEquivalentContracts(
+  it("rejects album versus song achievements", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -594,8 +594,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("rejects weekly versus end-of-month AI rankings", () => {
-    const result = matchEquivalentContracts(
+  it("rejects weekly versus end-of-month AI rankings", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -621,8 +621,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("rejects different IPO companies despite a shared underwriter", () => {
-    const result = matchEquivalentContracts(
+  it("rejects different IPO companies despite a shared underwriter", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -648,8 +648,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("rejects inverted party-to-chamber assignments in questions", () => {
-    const result = matchEquivalentContracts(
+  it("rejects inverted party-to-chamber assignments in questions", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -675,8 +675,8 @@ describe("equivalent contract matcher", () => {
     expect(result.candidates).toHaveLength(0);
   });
 
-  it("rejects Tour de France overall versus white-jersey winners", () => {
-    const result = matchEquivalentContracts(
+  it("rejects Tour de France overall versus white-jersey winners", async () => {
+    const result = await matchEquivalentContracts(
       [
         market(
           "kalshi",
@@ -700,5 +700,39 @@ describe("equivalent contract matcher", () => {
     );
 
     expect(result.candidates).toHaveLength(0);
+  });
+
+  it("yields to pending API work during a large catalog match", async () => {
+    let pendingTurnRan = false;
+    setImmediate(() => {
+      pendingTurnRan = true;
+    });
+
+    await matchEquivalentContracts(
+      [
+        ...Array.from({ length: 201 }, (_, index) =>
+          market(
+            "kalshi",
+            `K-YIELD-${index}`,
+            "Will the shared candidate win the shared election?",
+            "Shared candidate",
+          ),
+        ),
+        market(
+          "polymarket",
+          "P-YIELD",
+          "Will the shared candidate win the shared election?",
+          "Shared candidate",
+        ),
+      ],
+      {
+        minimumSimilarityPercent100: 50,
+        minimumPreliminaryGrossEdgeDollarsPerShare: 0,
+        maximumFreshBookPairs: 10,
+        maximumPairsPerEventPair: 10,
+      },
+    );
+
+    expect(pendingTurnRan).toBe(true);
   });
 });
