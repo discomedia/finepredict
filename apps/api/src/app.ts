@@ -27,7 +27,10 @@ import {
   type NeonAuthWebhookService,
 } from "./integrations/neon-auth-webhook.js";
 import { log } from "./log.js";
-import { UnsupportedMarketUrlError } from "./markets/platform.js";
+import {
+  ExternalServiceUnavailableError,
+  UnsupportedMarketUrlError,
+} from "./markets/platform.js";
 import {
   MarketSearchService,
   MarketSearchUnavailableError,
@@ -354,6 +357,19 @@ export function createApp(dependencies: CreateAppDependencies): Express {
       }
       if (error instanceof UnsupportedMarketUrlError) {
         response.status(400).json({ error: error.message });
+        return;
+      }
+      if (error instanceof ExternalServiceUnavailableError) {
+        log("api.externalServiceUnavailable", "External API request failed.", {
+          externalService: error.serviceName,
+          upstreamStatus: error.upstreamStatus,
+        });
+        response.status(error.responseStatus).json({
+          code: error.code,
+          error: error.message,
+          externalService: error.serviceName,
+          upstreamStatus: error.upstreamStatus,
+        });
         return;
       }
       if (error instanceof MarketSearchUnavailableError) {

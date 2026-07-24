@@ -92,7 +92,16 @@ export class ReportService {
    * @returns Report or null when not found.
    */
   public async getReport(slug: string): Promise<FinePredictReport | null> {
-    return this.dependencies.store.getReport(slug);
+    const report = await this.dependencies.store.getReport(slug);
+    if (!report) {
+      return null;
+    }
+    const left = report.markets[0]?.contract;
+    const right = report.markets[1]?.contract;
+    return {
+      ...report,
+      comparison: left && right ? compareContracts(left, right) : null,
+    };
   }
 
   /**

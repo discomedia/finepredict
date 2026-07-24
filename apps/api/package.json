@@ -6,6 +6,7 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "check:market-apis": "tsx src/check-market-apis.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/database/migrate.ts",
     "dev": "tsx watch --clear-screen=false src/server.ts",

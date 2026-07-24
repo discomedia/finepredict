@@ -5,6 +5,7 @@ import {
   extractNamedResolutionSource,
   extractPathValue,
   fetchJson,
+  tryFetchJson,
   UnsupportedMarketUrlError,
 } from "./platform.js";
 
@@ -69,6 +70,7 @@ export async function fetchPolymarketContract(
 
   const marketResponse = await tryFetchJson(
     `https://gamma-api.polymarket.com/markets/slug/${encodedMarketSlug}`,
+    "Polymarket",
     fetchImplementation,
   );
   if (marketResponse !== null) {
@@ -78,7 +80,7 @@ export async function fetchPolymarketContract(
 
   const eventResponse = await fetchJson(
     `https://gamma-api.polymarket.com/events/slug/${encodeURIComponent(eventSlug)}`,
-    "Polymarket Gamma API",
+    "Polymarket",
     fetchImplementation,
   );
   const event = PolymarketEventSchema.parse(eventResponse);
@@ -97,32 +99,6 @@ function extractNestedMarketSlug(url: URL): string | null {
     (segment) => segment.toLowerCase() === "event",
   );
   return segments[eventIndex + 2]?.trim() || null;
-}
-
-/**
- * Attempts a public JSON request and treats only 404 as a miss.
- *
- * @param url - Gamma API URL.
- * @param fetchImplementation - HTTP implementation.
- * @returns Parsed JSON or null when the resource does not exist.
- */
-async function tryFetchJson(
-  url: string,
-  fetchImplementation: typeof fetch,
-): Promise<unknown | null> {
-  const response = await fetchImplementation(url, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (response.status === 404) {
-    return null;
-  }
-  if (!response.ok) {
-    throw new Error(
-      `FinePredict Polymarket Gamma API: ${response.status} ${response.statusText}.`,
-    );
-  }
-  return response.json();
 }
 
 /**

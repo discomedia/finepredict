@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   extractNamedResolutionSource,
+  tryFetchJson,
   UnsupportedMarketUrlError,
 } from "./platform.js";
 
@@ -141,19 +142,7 @@ async function fetchKalshiJson(
   url: string,
   fetchImplementation: typeof fetch,
 ): Promise<unknown | null> {
-  const response = await fetchImplementation(url, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (response.status === 404) {
-    return null;
-  }
-  if (!response.ok) {
-    throw new Error(
-      `FinePredict Kalshi API: ${response.status} ${response.statusText}.`,
-    );
-  }
-  return response.json();
+  return tryFetchJson(url, "Kalshi", fetchImplementation);
 }
 
 /**

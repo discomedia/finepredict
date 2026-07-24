@@ -172,6 +172,38 @@ describe("FinePredict API integration", () => {
     expect(loadResponse.body.id).toBe(createResponse.body.id);
   });
 
+  it("returns a structured external-service error when a venue is unavailable", async () => {
+    const app = createApp({
+      config: TEST_CONFIG,
+      fetchImplementation: (async () =>
+        Response.json(
+          {
+            error: {
+              code: "service_unavailable",
+              service: "query-exchange",
+            },
+          },
+          { status: 503 },
+        )) as typeof fetch,
+      store: new MemoryReportStore(),
+    });
+
+    const response = await request(app)
+      .post("/api/reports")
+      .send({
+        urls: ["https://kalshi.com/markets/kxexample/example/kxexample-26-yes"],
+      })
+      .expect(503);
+
+    expect(response.body).toEqual({
+      code: "EXTERNAL_SERVICE_UNAVAILABLE",
+      error:
+        "Kalshi's external API is temporarily unavailable (HTTP 503). This is an upstream service issue, not a FinePredict failure. Please try again shortly.",
+      externalService: "Kalshi",
+      upstreamStatus: 503,
+    });
+  });
+
   it("returns a short-lived public live-price snapshot for a report", async () => {
     const app = createApp({
       config: TEST_CONFIG,

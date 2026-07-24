@@ -50,10 +50,14 @@ export class ApiRequestError extends Error {
    *
    * @param message - Safe server or fallback error message.
    * @param status - HTTP response status.
+   * @param code - Stable server error code, when supplied.
+   * @param externalService - External service responsible for the failure, when supplied.
    */
   public constructor(
     message: string,
     public readonly status: number,
+    public readonly code: string | null = null,
+    public readonly externalService: string | null = null,
   ) {
     super(message);
     this.name = "ApiRequestError";
@@ -619,14 +623,22 @@ async function requestJson(path: string, init?: RequestInit): Promise<unknown> {
   });
   const payload: unknown = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const errorPayload =
+      typeof payload === "object" && payload !== null ? payload : {};
     const message =
-      typeof payload === "object" &&
-      payload !== null &&
-      "error" in payload &&
-      typeof payload.error === "string"
-        ? payload.error
+      "error" in errorPayload && typeof errorPayload.error === "string"
+        ? errorPayload.error
         : `Request failed with status ${response.status}.`;
-    throw new ApiRequestError(message, response.status);
+    const code =
+      "code" in errorPayload && typeof errorPayload.code === "string"
+        ? errorPayload.code
+        : null;
+    const externalService =
+      "externalService" in errorPayload &&
+      typeof errorPayload.externalService === "string"
+        ? errorPayload.externalService
+        : null;
+    throw new ApiRequestError(message, response.status, code, externalService);
   }
   return payload;
 }

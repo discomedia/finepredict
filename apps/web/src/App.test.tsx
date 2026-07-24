@@ -141,6 +141,46 @@ describe("App", () => {
     ).toBe(false);
   });
 
+  it("labels venue outages as external rather than FinePredict failures", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith("/api/reports") && init?.method === "POST") {
+        return Response.json(
+          {
+            code: "EXTERNAL_SERVICE_UNAVAILABLE",
+            error:
+              "Kalshi's external API is temporarily unavailable (HTTP 503). This is an upstream service issue, not a FinePredict failure. Please try again shortly.",
+            externalService: "Kalshi",
+            upstreamStatus: 503,
+          },
+          { status: 503 },
+        );
+      }
+      return Response.json({ reports: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByLabelText("Polymarket URL"), {
+      target: { value: "https://polymarket.com/event/example" },
+    });
+    fireEvent.change(screen.getByLabelText("Kalshi URL"), {
+      target: { value: "https://kalshi.com/markets/example/example" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: /compare market rules/i }),
+    );
+
+    expect(await screen.findByText("Kalshi unavailable")).toBeInTheDocument();
+    expect(screen.getByText(/not a FinePredict failure/i)).toBeInTheDocument();
+    expect(
+      screen.getByText("EXTERNAL_SERVICE_UNAVAILABLE"),
+    ).toBeInTheDocument();
+  });
+
   it("debounces discovery and prefills the venue-aligned URL fields", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);

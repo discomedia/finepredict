@@ -13,6 +13,33 @@ export class UnsupportedMarketUrlError extends Error {
   }
 }
 
+/** Error caused by an unavailable public prediction-market service. */
+export class ExternalServiceUnavailableError extends Error {
+  public readonly code = "EXTERNAL_SERVICE_UNAVAILABLE";
+  public readonly responseStatus = 503;
+
+  /**
+   * Creates an upstream-service failure safe to expose to the browser.
+   *
+   * @param serviceName - Human-readable external venue name.
+   * @param upstreamStatus - HTTP status returned by the external service, when available.
+   * @param cause - Original network error, when the service did not return a response.
+   */
+  public constructor(
+    public readonly serviceName: string,
+    public readonly upstreamStatus: number | null,
+    cause?: unknown,
+  ) {
+    const statusDetail =
+      upstreamStatus === null ? "" : ` (HTTP ${upstreamStatus})`;
+    super(
+      `${serviceName}'s external API is temporarily unavailable${statusDetail}. This is an upstream service issue, not a FinePredict failure. Please try again shortly.`,
+      cause === undefined ? undefined : { cause },
+    );
+    this.name = "ExternalServiceUnavailableError";
+  }
+}
+
 /**
  * Determines which supported platform owns a market URL.
  *
@@ -87,16 +114,101 @@ export async function fetchJson(
   serviceName: string,
   fetchImplementation: typeof fetch,
 ): Promise<unknown> {
-  const response = await fetchImplementation(url, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(15_000),
-  });
+  const response = await fetchExternalResponse(
+    url,
+    serviceName,
+    fetchImplementation,
+  );
+  return parseExternalJson(response, serviceName);
+}
+
+/**
+ * Fetches JSON while treating a missing external resource as a normal fallback.
+ *
+ * @param url - Public platform API URL.
+ * @param serviceName - Human-readable external venue name.
+ * @param fetchImplementation - HTTP implementation.
+ * @returns Parsed JSON or null when the resource does not exist.
+ */
+export async function tryFetchJson(
+  url: string,
+  serviceName: string,
+  fetchImplementation: typeof fetch,
+): Promise<unknown | null> {
+  const response = await fetchExternalResponse(
+    url,
+    serviceName,
+    fetchImplementation,
+    true,
+  );
+  return response === null ? null : parseExternalJson(response, serviceName);
+}
+
+/**
+ * Requests an external API and converts HTTP or network failures into a typed error.
+ *
+ * @param url - Public platform API URL.
+ * @param serviceName - Human-readable external venue name.
+ * @param fetchImplementation - HTTP implementation.
+ * @param allowNotFound - Whether a 404 response should return null.
+ * @returns Successful response or null for an allowed missing resource.
+ */
+function fetchExternalResponse(
+  url: string,
+  serviceName: string,
+  fetchImplementation: typeof fetch,
+  allowNotFound?: false,
+): Promise<Response>;
+function fetchExternalResponse(
+  url: string,
+  serviceName: string,
+  fetchImplementation: typeof fetch,
+  allowNotFound: true,
+): Promise<Response | null>;
+async function fetchExternalResponse(
+  url: string,
+  serviceName: string,
+  fetchImplementation: typeof fetch,
+  allowNotFound = false,
+): Promise<Response | null> {
+  let response: Response;
+  try {
+    response = await fetchImplementation(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (error) {
+    throw new ExternalServiceUnavailableError(serviceName, null, error);
+  }
+  if (allowNotFound && response.status === 404) {
+    return null;
+  }
   if (!response.ok) {
-    throw new Error(
-      `FinePredict ${serviceName}: ${response.status} ${response.statusText} for ${url}.`,
+    throw new ExternalServiceUnavailableError(serviceName, response.status);
+  }
+  return response;
+}
+
+/**
+ * Parses a successful external response as JSON.
+ *
+ * @param response - Successful external API response.
+ * @param serviceName - Human-readable external venue name.
+ * @returns Parsed JSON payload.
+ */
+async function parseExternalJson(
+  response: Response,
+  serviceName: string,
+): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch (error) {
+    throw new ExternalServiceUnavailableError(
+      serviceName,
+      response.status,
+      error,
     );
   }
-  return response.json();
 }
 
 /**

@@ -10,6 +10,7 @@ import {
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
+  ApiRequestError,
   createReport,
   listRecentReports,
   searchMarketPairs,
@@ -24,6 +25,13 @@ interface MarketPairSearchState {
   error: string | null;
   pairs: MarketSearchPair[];
   status: MarketSearchStatus;
+}
+
+/** Browser-visible failure for the primary report-analysis form. */
+interface AnalysisFormError {
+  code: string | null;
+  message: string;
+  title: string;
 }
 
 /** Empty pair state used before a valid search term is entered. */
@@ -54,7 +62,7 @@ export function HomePage() {
   const [searchState, setSearchState] = useState<MarketPairSearchState>(
     EMPTY_MARKET_PAIR_SEARCH_STATE,
   );
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AnalysisFormError | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recentReports, setRecentReports] = useState<RecentReport[]>([]);
   const hasStartedAutomaticComparison = useRef(false);
@@ -77,11 +85,7 @@ export function HomePage() {
         const report = await createReport({ urls: submittedUrls });
         await navigate(`/reports/${report.slug}`);
       } catch (caughtError) {
-        setError(
-          caughtError instanceof Error
-            ? caughtError.message
-            : "FinePredict could not analyze this market.",
-        );
+        setError(createAnalysisFormError(caughtError));
       } finally {
         setIsSubmitting(false);
       }
@@ -184,7 +188,11 @@ export function HomePage() {
     event.preventDefault();
     const submittedUrls = urls.map((url) => url.trim()).filter(Boolean);
     if (submittedUrls.length !== 2) {
-      setError("Choose or paste both market URLs to compare their contracts.");
+      setError({
+        code: null,
+        message: "Choose or paste both market URLs to compare their contracts.",
+        title: "Two market URLs required",
+      });
       return;
     }
     await submitComparison(submittedUrls);
@@ -315,7 +323,15 @@ export function HomePage() {
               </div>
             </div>
           </div>
-          {error ? <div className="form-error">{error}</div> : null}
+          {error ? (
+            <div className="form-error" role="alert">
+              <div>
+                <strong>{error.title}</strong>
+                <span>{error.message}</span>
+                {error.code ? <code>{error.code}</code> : null}
+              </div>
+            </div>
+          ) : null}
           <button
             className="primary-button"
             type="submit"
@@ -374,6 +390,33 @@ export function HomePage() {
       </section>
     </>
   );
+}
+
+/**
+ * Converts an API failure into concise report-form guidance.
+ *
+ * @param error - Unknown failure caught while creating a report.
+ * @returns Structured browser-visible error copy.
+ */
+function createAnalysisFormError(error: unknown): AnalysisFormError {
+  if (
+    error instanceof ApiRequestError &&
+    error.code === "EXTERNAL_SERVICE_UNAVAILABLE"
+  ) {
+    return {
+      code: error.code,
+      message: error.message,
+      title: `${error.externalService ?? "External service"} unavailable`,
+    };
+  }
+  return {
+    code: null,
+    message:
+      error instanceof Error
+        ? error.message
+        : "FinePredict could not analyze this market.",
+    title: "Analysis could not be completed",
+  };
 }
 
 /** Properties for the aligned cross-venue result grid. */

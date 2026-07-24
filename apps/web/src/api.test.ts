@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getNeonAuthToken, requestNeonMagicLink } from "./auth.js";
 
 import {
+  ApiRequestError,
+  createReport,
   createDeveloperApiCheckout,
   getCurrentAccount,
   getMarketStatus,
@@ -167,6 +169,37 @@ describe("authenticated API client", () => {
       "http://localhost:3001/api/markets/search-pairs?query=Fed+rates",
     );
     expect(getNeonAuthToken).not.toHaveBeenCalled();
+  });
+
+  it("retains structured external-service details from a failed report", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json(
+        {
+          code: "EXTERNAL_SERVICE_UNAVAILABLE",
+          error:
+            "Kalshi's external API is temporarily unavailable (HTTP 503). This is an upstream service issue, not a FinePredict failure. Please try again shortly.",
+          externalService: "Kalshi",
+          upstreamStatus: 503,
+        },
+        { status: 503 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      createReport({
+        urls: [
+          "https://polymarket.com/event/example",
+          "https://kalshi.com/markets/example/example",
+        ],
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<Partial<ApiRequestError>>({
+        code: "EXTERNAL_SERVICE_UNAVAILABLE",
+        externalService: "Kalshi",
+        status: 503,
+      }),
+    );
   });
 
   it("does not attach a bearer token when no Neon session exists", async () => {

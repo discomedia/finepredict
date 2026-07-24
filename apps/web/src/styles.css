@@ -561,6 +561,24 @@ main {
   background: var(--red-soft);
 }
 
+.form-error strong,
+.form-error span {
+  display: block;
+}
+
+.form-error span {
+  margin-top: 2px;
+}
+
+.form-error code {
+  display: inline-block;
+  margin-top: 7px;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
 .form-success {
   color: var(--green);
   border-color: #9cc5b5;
