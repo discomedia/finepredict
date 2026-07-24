@@ -72,6 +72,30 @@ describe("arbitrage API", () => {
       ],
     );
   });
+
+  it("returns one pair's hourly spread history", async () => {
+    const app = express();
+    app.use(
+      "/api/arbitrage",
+      createArbitrageRouter(runtimeFixture(), reportServiceFixture()),
+    );
+
+    const response = await request(app).get(
+      "/api/arbitrage/opportunities/pair-1/history",
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      opportunityId: "pair-1",
+      detectedAtIso: "2026-07-24T00:00:00.000Z",
+      points: [
+        {
+          grossEdgeDollarsPerShare: 0.1,
+          netEdgeDollarsPerShare: 0.09,
+        },
+      ],
+    });
+  });
 });
 
 /**
@@ -108,6 +132,24 @@ function runtimeFixture(): ArbitrageRuntime {
       listOpportunityCategories: async () => ["test"],
       listOpportunities: async () => [opportunity],
       getOpportunity: async () => opportunity,
+      getOpportunityHistory: async () => ({
+        opportunityId: "pair-1",
+        detectedAtIso: "2026-07-24T00:00:00.000Z",
+        latestObservedAtIso: "2026-07-24T00:00:00.000Z",
+        points: [
+          {
+            opportunityId: "pair-1",
+            observedAtIso: "2026-07-24T00:00:00.000Z",
+            buyYesVenue: "kalshi",
+            buyNoVenue: "polymarket",
+            buyYesAveragePriceDollars: 0.4,
+            buyNoAveragePriceDollars: 0.5,
+            grossEdgeDollarsPerShare: 0.1,
+            netEdgeDollarsPerShare: 0.09,
+            roiPercent100: 9.89,
+          },
+        ],
+      }),
     },
     service: {
       getStatus: () => ({

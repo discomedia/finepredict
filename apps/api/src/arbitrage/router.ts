@@ -82,6 +82,24 @@ export function createArbitrageRouter(
   });
 
   router.get(
+    "/opportunities/:opportunityId/history",
+    async (request, response, next) => {
+      try {
+        const history = await runtime.repository.getOpportunityHistory(
+          String(request.params.opportunityId),
+        );
+        if (!history) {
+          response.status(404).json({ error: "Opportunity not found." });
+          return;
+        }
+        response.json(history);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
     "/opportunities/:opportunityId",
     async (request, response, next) => {
       try {

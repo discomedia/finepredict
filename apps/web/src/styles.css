@@ -2994,6 +2994,158 @@ main {
   color: #9f493a;
 }
 
+.arbitrage-history-row:hover {
+  background: transparent !important;
+}
+
+.arbitrage-history-row td {
+  padding: 0 26px 24px;
+  background: var(--surface-soft);
+  text-align: left;
+}
+
+.arbitrage-history-panel {
+  padding: 20px 22px 2px;
+  border-top: 1px solid var(--line-dark);
+}
+
+.arbitrage-history-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.arbitrage-history-heading h3 {
+  margin: 5px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 22px;
+  font-weight: 500;
+}
+
+.arbitrage-history-meta,
+.arbitrage-history-intro,
+.arbitrage-history-message,
+.arbitrage-history-axis,
+.arbitrage-history-legend {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.arbitrage-history-intro {
+  max-width: 720px;
+  margin: 9px 0 15px;
+  line-height: 1.55;
+}
+
+.arbitrage-history-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 7px;
+  text-transform: uppercase;
+}
+
+.arbitrage-history-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.arbitrage-history-legend i {
+  width: 15px;
+  height: 3px;
+}
+
+.arbitrage-history-legend i.yes,
+.arbitrage-history-chart path.yes {
+  background: #167553;
+  stroke: #167553;
+}
+
+.arbitrage-history-legend i.no,
+.arbitrage-history-chart path.no {
+  background: #3158bf;
+  stroke: #3158bf;
+}
+
+.arbitrage-history-legend i.gross,
+.arbitrage-history-chart path.gross {
+  background: #a36b17;
+  stroke: #a36b17;
+}
+
+.arbitrage-history-legend i.net,
+.arbitrage-history-chart path.net {
+  background: #9f493a;
+  stroke: #9f493a;
+}
+
+.arbitrage-history-chart {
+  display: block;
+  width: 100%;
+  height: 300px;
+  overflow: visible;
+}
+
+.arbitrage-history-chart path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.arbitrage-history-grid {
+  stroke: #d8ddd8;
+  stroke-dasharray: 3 5;
+}
+
+.arbitrage-history-chart text {
+  fill: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.arbitrage-history-marker line {
+  stroke: #6c756e;
+  stroke-dasharray: 4 4;
+}
+
+.arbitrage-history-marker text {
+  fill: var(--ink);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.arbitrage-history-marker.detected line {
+  stroke: var(--green);
+}
+
+.arbitrage-history-axis {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin: 7px 0 0;
+}
+
+.arbitrage-history-axis span:nth-child(2) {
+  text-align: center;
+}
+
+.arbitrage-history-axis span:last-child {
+  text-align: right;
+}
+
+.arbitrage-history-message {
+  margin: 12px 0 0;
+  line-height: 1.5;
+}
+
+.arbitrage-history-message.error {
+  color: #9f493a;
+}
+
 @keyframes arbitrage-compare-spin {
   to {
     transform: rotate(360deg);

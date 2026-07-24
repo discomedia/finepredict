@@ -29,6 +29,38 @@ describe("ArbitragePage", () => {
             opportunities: [opportunityFixture(), secondOpportunityFixture()],
           });
         }
+        if (url.endsWith("/api/arbitrage/opportunities/pair-1/history")) {
+          return Response.json({
+            opportunityId: "pair-1",
+            contractOriginAtIso: "2026-07-23T00:00:00.000Z",
+            detectedAtIso: "2026-07-24T00:00:00.000Z",
+            latestObservedAtIso: "2026-07-24T01:00:00.000Z",
+            points: [
+              {
+                opportunityId: "pair-1",
+                observedAtIso: "2026-07-24T00:00:00.000Z",
+                buyYesVenue: "kalshi",
+                buyNoVenue: "polymarket",
+                buyYesAveragePriceDollars: 0.4,
+                buyNoAveragePriceDollars: 0.5,
+                grossEdgeDollarsPerShare: 0.1,
+                netEdgeDollarsPerShare: 0.09,
+                roiPercent100: 9.89,
+              },
+              {
+                opportunityId: "pair-1",
+                observedAtIso: "2026-07-24T01:00:00.000Z",
+                buyYesVenue: "kalshi",
+                buyNoVenue: "polymarket",
+                buyYesAveragePriceDollars: 0.43,
+                buyNoAveragePriceDollars: 0.55,
+                grossEdgeDollarsPerShare: 0.02,
+                netEdgeDollarsPerShare: 0.01,
+                roiPercent100: 1,
+              },
+            ],
+          });
+        }
         if (url.endsWith("/api/arbitrage/summary")) {
           return Response.json({
             kalshiMarketCount: 50_000,
@@ -110,6 +142,9 @@ describe("ArbitragePage", () => {
         screen.getByRole("button", { name: new RegExp(heading, "i") }),
       ).toBeInTheDocument();
     }
+    fireEvent.click(screen.getAllByRole("button", { name: "History" })[1]!);
+    expect(await screen.findByText("Spread history")).toBeInTheDocument();
+    expect(screen.getByText("First detection marked")).toBeInTheDocument();
   });
 
   it("shows comparison progress and navigates to the reusable report", async () => {

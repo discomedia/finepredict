@@ -5,6 +5,7 @@ import {
   ApiKeySummarySchema,
   ArbitrageComparisonReportResponseSchema,
   ArbitrageOpportunityListResponseSchema,
+  ArbitrageOpportunityHistoryResponseSchema,
   ArbitrageServiceStatusSchema,
   ArbitrageSummarySchema,
   DisputeCaseSchema,
@@ -23,6 +24,7 @@ import {
   type ApiKeySummary,
   type ArbitrageComparisonReportResponse,
   type ArbitrageOpportunityListResponse,
+  type ArbitrageOpportunityHistoryResponse,
   type ArbitrageRelationship,
   type ArbitrageServiceStatus,
   type ArbitrageSummary,
@@ -184,6 +186,22 @@ export async function getArbitrageOpportunities(
   }
   return ArbitrageOpportunityListResponseSchema.parse(
     await requestJson(`/api/arbitrage/opportunities?${query.toString()}`),
+  );
+}
+
+/**
+ * Loads the scanner's one-hour executable-price history for a pair.
+ *
+ * @param opportunityId - Stable scanner opportunity identifier.
+ * @returns Hourly spread observations and timeline markers.
+ */
+export async function getArbitrageOpportunityHistory(
+  opportunityId: string,
+): Promise<ArbitrageOpportunityHistoryResponse> {
+  return ArbitrageOpportunityHistoryResponseSchema.parse(
+    await requestJson(
+      `/api/arbitrage/opportunities/${encodeURIComponent(opportunityId)}/history`,
+    ),
   );
 }
 

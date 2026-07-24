@@ -1,5 +1,6 @@
 import type {
   ArbitrageOpportunity,
+  ArbitrageOpportunityHistoryResponse,
   ArbitrageRelationship,
   ArbitrageServiceStatus,
   ArbitrageSummary,
@@ -8,6 +9,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Clock3,
   GitCompareArrows,
   LoaderCircle,
   RefreshCw,
@@ -17,6 +19,7 @@ import { useNavigate } from "react-router-dom";
 
 import {
   createOrGetArbitrageComparison,
+  getArbitrageOpportunityHistory,
   getArbitrageCategories,
   getArbitrageOpportunities,
   getArbitrageServiceStatus,
@@ -469,6 +472,11 @@ function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
   const [comparisonStatus, setComparisonStatus] = useState<string | null>(null);
   const [comparisonError, setComparisonError] = useState(false);
   const [comparing, setComparing] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] =
+    useState<ArbitrageOpportunityHistoryResponse | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const title = getOpportunityTitle(opportunity);
   const expiryAtIso = getNearestExpiryIso(opportunity);
 
@@ -531,118 +539,552 @@ function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
     }
   };
 
+  /**
+   * Opens or loads the hourly scanner history for this pair.
+   *
+   * @returns Nothing after the history panel is ready.
+   */
+  const toggleHistory = async (): Promise<void> => {
+    if (historyOpen) {
+      setHistoryOpen(false);
+      return;
+    }
+    setHistoryOpen(true);
+    if (history || historyLoading) {
+      return;
+    }
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      setHistory(
+        await getArbitrageOpportunityHistory(opportunity.opportunityId),
+      );
+    } catch (error) {
+      setHistoryError(
+        errorMessage(error, "FinePredict could not load spread history."),
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   return (
-    <tr>
-      <td>
-        <span className={`arbitrage-badge ${opportunity.relationship}`}>
-          {formatRelationship(opportunity.relationship)}
-        </span>
-        <strong className="arbitrage-contract-title">{title}</strong>
-        <div className="arbitrage-contract-links">
-          <a
-            href={opportunity.kalshi.marketUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Kalshi ↗
-          </a>
-          <a
-            href={opportunity.polymarket.marketUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Polymarket ↗
-          </a>
-          {opportunity.kalshi.settlementRulesUrl ? (
+    <>
+      <tr>
+        <td>
+          <span className={`arbitrage-badge ${opportunity.relationship}`}>
+            {formatRelationship(opportunity.relationship)}
+          </span>
+          <strong className="arbitrage-contract-title">{title}</strong>
+          <div className="arbitrage-contract-links">
             <a
-              href={opportunity.kalshi.settlementRulesUrl}
+              href={opportunity.kalshi.marketUrl}
               target="_blank"
               rel="noreferrer"
             >
-              Rules ↗
+              Kalshi ↗
             </a>
-          ) : null}
-        </div>
-        {opportunity.settlementRisks[0] ? (
-          <span className="arbitrage-risk">
-            Basis risk: {opportunity.settlementRisks[0]}
-          </span>
-        ) : null}
-        <div className="arbitrage-compare">
-          <button
-            className={`secondary-button arbitrage-compare-button${comparing ? " is-comparing" : ""}`}
-            type="button"
-            disabled={comparing}
-            aria-busy={comparing}
-            onClick={() => void compareContracts()}
-          >
-            {comparing ? (
-              <LoaderCircle size={13} aria-hidden="true" />
-            ) : (
-              <GitCompareArrows size={13} aria-hidden="true" />
-            )}
-            {comparing
-              ? "Comparing…"
-              : savedComparisonSlug
-                ? "Open comparison"
-                : "Compare"}
-          </button>
-          {comparisonStatus ? (
-            <span
-              className={
-                comparisonError
-                  ? "arbitrage-compare-status error"
-                  : "arbitrage-compare-status"
-              }
-              role={comparisonError ? "alert" : "status"}
+            <a
+              href={opportunity.polymarket.marketUrl}
+              target="_blank"
+              rel="noreferrer"
             >
-              {comparisonStatus}
+              Polymarket ↗
+            </a>
+            {opportunity.kalshi.settlementRulesUrl ? (
+              <a
+                href={opportunity.kalshi.settlementRulesUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Rules ↗
+              </a>
+            ) : null}
+          </div>
+          {opportunity.settlementRisks[0] ? (
+            <span className="arbitrage-risk">
+              Basis risk: {opportunity.settlementRisks[0]}
             </span>
           ) : null}
-        </div>
-      </td>
-      <td>
-        <span className="arbitrage-trade-leg">
-          YES {formatCents(opportunity.buyYesAveragePriceDollars)}{" "}
-          <em>{formatVenue(opportunity.direction.buyYesVenue)}</em>
-        </span>
-        <span className="arbitrage-trade-leg">
-          NO {formatCents(opportunity.buyNoAveragePriceDollars)}{" "}
-          <em>{formatVenue(opportunity.direction.buyNoVenue)}</em>
-        </span>
-      </td>
-      <NumberCell
-        value={formatCents(opportunity.grossEdgeDollarsPerShare)}
-        detail={`${formatShares(opportunity.executableShares)} shares`}
-      />
-      <NumberCell
-        value={`−${formatCents(opportunity.feeDollarsPerShare)}`}
-        detail="modeled taker fees"
-      />
-      <NumberCell
-        value={formatCents(opportunity.netEdgeDollarsPerShare)}
-        detail={`${opportunity.roiPercent100.toFixed(2)}% ROI`}
-        positive
-      />
-      <NumberCell
-        value={formatDollars(opportunity.netProfitDollars)}
-        detail="at displayed depth"
-        positive
-      />
-      <NumberCell
-        value={expiryAtIso ? formatExpiryDate(expiryAtIso) : "Unknown"}
-        detail={
-          expiryAtIso
-            ? formatTimeToExpiry(expiryAtIso, clockMs)
-            : "venue date unavailable"
-        }
-      />
-      <NumberCell
-        value={relativeTime(opportunity.observedAtIso, clockMs)}
-        detail={formatTimestamp(opportunity.observedAtIso)}
-      />
-    </tr>
+          <div className="arbitrage-compare">
+            <button
+              className="secondary-button arbitrage-compare-button"
+              type="button"
+              aria-expanded={historyOpen}
+              onClick={() => void toggleHistory()}
+            >
+              <Clock3 size={13} aria-hidden="true" />
+              {historyOpen ? "Hide history" : "History"}
+            </button>
+            <button
+              className={`secondary-button arbitrage-compare-button${comparing ? " is-comparing" : ""}`}
+              type="button"
+              disabled={comparing}
+              aria-busy={comparing}
+              onClick={() => void compareContracts()}
+            >
+              {comparing ? (
+                <LoaderCircle size={13} aria-hidden="true" />
+              ) : (
+                <GitCompareArrows size={13} aria-hidden="true" />
+              )}
+              {comparing
+                ? "Comparing…"
+                : savedComparisonSlug
+                  ? "Open comparison"
+                  : "Compare"}
+            </button>
+            {comparisonStatus ? (
+              <span
+                className={
+                  comparisonError
+                    ? "arbitrage-compare-status error"
+                    : "arbitrage-compare-status"
+                }
+                role={comparisonError ? "alert" : "status"}
+              >
+                {comparisonStatus}
+              </span>
+            ) : null}
+          </div>
+        </td>
+        <td>
+          <span className="arbitrage-trade-leg">
+            YES {formatCents(opportunity.buyYesAveragePriceDollars)}{" "}
+            <em>{formatVenue(opportunity.direction.buyYesVenue)}</em>
+          </span>
+          <span className="arbitrage-trade-leg">
+            NO {formatCents(opportunity.buyNoAveragePriceDollars)}{" "}
+            <em>{formatVenue(opportunity.direction.buyNoVenue)}</em>
+          </span>
+        </td>
+        <NumberCell
+          value={formatCents(opportunity.grossEdgeDollarsPerShare)}
+          detail={`${formatShares(opportunity.executableShares)} shares`}
+        />
+        <NumberCell
+          value={`−${formatCents(opportunity.feeDollarsPerShare)}`}
+          detail="modeled taker fees"
+        />
+        <NumberCell
+          value={formatCents(opportunity.netEdgeDollarsPerShare)}
+          detail={`${opportunity.roiPercent100.toFixed(2)}% ROI`}
+          positive
+        />
+        <NumberCell
+          value={formatDollars(opportunity.netProfitDollars)}
+          detail="at displayed depth"
+          positive
+        />
+        <NumberCell
+          value={expiryAtIso ? formatExpiryDate(expiryAtIso) : "Unknown"}
+          detail={
+            expiryAtIso
+              ? formatTimeToExpiry(expiryAtIso, clockMs)
+              : "venue date unavailable"
+          }
+        />
+        <NumberCell
+          value={relativeTime(opportunity.observedAtIso, clockMs)}
+          detail={formatTimestamp(opportunity.observedAtIso)}
+        />
+      </tr>
+      {historyOpen ? (
+        <tr className="arbitrage-history-row">
+          <td colSpan={8}>
+            {historyLoading ? (
+              <p className="arbitrage-history-message">
+                Loading hourly history…
+              </p>
+            ) : historyError ? (
+              <p className="arbitrage-history-message error" role="alert">
+                {historyError}
+              </p>
+            ) : history ? (
+              <OpportunityHistoryChart history={history} />
+            ) : null}
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
+}
+
+/**
+ * Renders hourly executable prices and spread for one scanner pair.
+ *
+ * @param props - Persisted hourly history.
+ * @returns Accessible dual-scale SVG chart.
+ */
+function OpportunityHistoryChart({
+  history,
+}: {
+  history: ArbitrageOpportunityHistoryResponse;
+}) {
+  const points = history.points;
+  if (points.length === 0) {
+    return (
+      <div className="arbitrage-history-panel">
+        <h3>Spread history</h3>
+        <p className="arbitrage-history-message">
+          The scanner has not completed an hourly observation for this pair yet.
+        </p>
+      </div>
+    );
+  }
+  const dimensions = { width: 860, height: 300 };
+  const detectionMs = Date.parse(points[0]!.observedAtIso);
+  const originMs = history.contractOriginAtIso
+    ? Date.parse(history.contractOriginAtIso)
+    : detectionMs;
+  const latestMs = Date.parse(points.at(-1)!.observedAtIso);
+  const timeDomain = getHistoryTimeDomain(originMs, latestMs);
+  const priceDomain = getHistoryPriceDomain(points);
+  const spreadDomain = getHistorySpreadDomain(points);
+  return (
+    <div className="arbitrage-history-panel">
+      <div className="arbitrage-history-heading">
+        <div>
+          <span className="eyebrow">Hourly scanner observations</span>
+          <h3>Spread history</h3>
+        </div>
+        <span className="arbitrage-history-meta">
+          Last observed {formatTimestamp(points.at(-1)!.observedAtIso)}
+        </span>
+      </div>
+      <p className="arbitrage-history-intro">
+        Prices are the executable YES and NO legs used by the scanner. Spread is
+        shown before and after modeled fees; origin and first detection are
+        marked when timestamps are available.
+      </p>
+      <div className="arbitrage-history-legend" aria-hidden="true">
+        <span>
+          <i className="yes" />
+          YES price
+        </span>
+        <span>
+          <i className="no" />
+          NO price
+        </span>
+        <span>
+          <i className="gross" />
+          Gross spread
+        </span>
+        <span>
+          <i className="net" />
+          Post-fee edge
+        </span>
+      </div>
+      <svg
+        aria-label="Hourly arbitrage prices and spread history"
+        className="arbitrage-history-chart"
+        role="img"
+        viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
+      >
+        {renderHistoryGrid(dimensions, priceDomain, spreadDomain)}
+        {renderHistoryMarker("origin", originMs, timeDomain, dimensions)}
+        {originMs < detectionMs
+          ? renderHistoryMarker("detected", detectionMs, timeDomain, dimensions)
+          : null}
+        <path
+          className="yes"
+          d={createHistoryPath(
+            points,
+            dimensions,
+            timeDomain,
+            priceDomain,
+            (point) => point.buyYesAveragePriceDollars * 100,
+            12,
+            156,
+          )}
+        />
+        <path
+          className="no"
+          d={createHistoryPath(
+            points,
+            dimensions,
+            timeDomain,
+            priceDomain,
+            (point) => point.buyNoAveragePriceDollars * 100,
+            12,
+            156,
+          )}
+        />
+        <path
+          className="gross"
+          d={createHistoryPath(
+            points,
+            dimensions,
+            timeDomain,
+            spreadDomain,
+            (point) => point.grossEdgeDollarsPerShare * 100,
+            180,
+            256,
+          )}
+        />
+        <path
+          className="net"
+          d={createHistoryPath(
+            points,
+            dimensions,
+            timeDomain,
+            spreadDomain,
+            (point) => point.netEdgeDollarsPerShare * 100,
+            180,
+            256,
+          )}
+        />
+      </svg>
+      <div className="arbitrage-history-axis">
+        <span>{formatHistoryDate(originMs)}</span>
+        <span>
+          {originMs < detectionMs
+            ? "First detection marked"
+            : "First detection"}
+        </span>
+        <span>{formatHistoryDate(latestMs)}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Draws grid lines and scale labels for both history panels.
+ *
+ * @param dimensions - SVG dimensions.
+ * @param priceDomain - Price range in cents.
+ * @param spreadDomain - Spread range in cents.
+ * @returns SVG grid elements.
+ */
+function renderHistoryGrid(
+  dimensions: { width: number; height: number },
+  priceDomain: { minimum: number; maximum: number },
+  spreadDomain: { minimum: number; maximum: number },
+) {
+  return [0, 0.5, 1].map((position) => (
+    <g key={position}>
+      <line
+        className="arbitrage-history-grid"
+        x1="0"
+        x2={dimensions.width}
+        y1={12 + position * 144}
+        y2={12 + position * 144}
+      />
+      <line
+        className="arbitrage-history-grid"
+        x1="0"
+        x2={dimensions.width}
+        y1={180 + position * 76}
+        y2={180 + position * 76}
+      />
+      <text x="4" y={16 + position * 144}>
+        {formatHistoryCents(
+          priceDomain.maximum -
+            position * (priceDomain.maximum - priceDomain.minimum),
+        )}
+      </text>
+      <text x="4" y={184 + position * 76}>
+        {formatHistoryCents(
+          spreadDomain.maximum -
+            position * (spreadDomain.maximum - spreadDomain.minimum),
+        )}
+      </text>
+    </g>
+  ));
+}
+
+/**
+ * Creates one timestamped history line.
+ *
+ * @param points - Hourly observations.
+ * @param dimensions - SVG dimensions.
+ * @param timeDomain - Shared timeline.
+ * @param valueDomain - Series value range.
+ * @param valueForPoint - Series selector.
+ * @param top - Chart top.
+ * @param bottom - Chart bottom.
+ * @returns SVG path data.
+ */
+function createHistoryPath(
+  points: ArbitrageOpportunityHistoryResponse["points"],
+  dimensions: { width: number; height: number },
+  timeDomain: { minimum: number; maximum: number },
+  valueDomain: { minimum: number; maximum: number },
+  valueForPoint: (
+    point: ArbitrageOpportunityHistoryResponse["points"][number],
+  ) => number,
+  top: number,
+  bottom: number,
+): string {
+  return points
+    .map((point, index) => {
+      const x = scaleHistoryValue(
+        Date.parse(point.observedAtIso),
+        timeDomain.minimum,
+        timeDomain.maximum,
+        0,
+        dimensions.width,
+      );
+      const y = scaleHistoryValue(
+        valueForPoint(point),
+        valueDomain.minimum,
+        valueDomain.maximum,
+        bottom,
+        top,
+      );
+      return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+}
+
+/**
+ * Returns a non-zero timeline range.
+ *
+ * @param minimum - Origin or first-observation timestamp.
+ * @param maximum - Latest observation timestamp.
+ * @returns Timeline range.
+ */
+function getHistoryTimeDomain(minimum: number, maximum: number) {
+  return { minimum, maximum: maximum > minimum ? maximum : minimum + 1 };
+}
+
+/**
+ * Returns a padded price range in cents.
+ *
+ * @param points - Hourly observations.
+ * @returns Price chart range.
+ */
+function getHistoryPriceDomain(
+  points: ArbitrageOpportunityHistoryResponse["points"],
+) {
+  return getPaddedHistoryDomain(
+    points.flatMap((point) => [
+      point.buyYesAveragePriceDollars * 100,
+      point.buyNoAveragePriceDollars * 100,
+    ]),
+    0,
+    100,
+  );
+}
+
+/**
+ * Returns a padded spread range in cents.
+ *
+ * @param points - Hourly observations.
+ * @returns Spread chart range.
+ */
+function getHistorySpreadDomain(
+  points: ArbitrageOpportunityHistoryResponse["points"],
+) {
+  return getPaddedHistoryDomain(
+    points.flatMap((point) => [
+      point.grossEdgeDollarsPerShare * 100,
+      point.netEdgeDollarsPerShare * 100,
+    ]),
+    -100,
+    100,
+  );
+}
+
+/**
+ * Pads and clamps one history chart range.
+ *
+ * @param values - Visible series values.
+ * @param minimumClamp - Lower hard bound.
+ * @param maximumClamp - Upper hard bound.
+ * @returns Padded chart domain.
+ */
+function getPaddedHistoryDomain(
+  values: readonly number[],
+  minimumClamp: number,
+  maximumClamp: number,
+) {
+  const minimumValue = Math.min(...values);
+  const maximumValue = Math.max(...values);
+  const padding = Math.max(1, (maximumValue - minimumValue) * 0.15);
+  const minimum = Math.max(minimumClamp, minimumValue - padding);
+  const maximum = Math.min(maximumClamp, maximumValue + padding);
+  return { minimum, maximum: maximum > minimum ? maximum : minimum + 1 };
+}
+
+/**
+ * Renders one vertical timeline marker.
+ *
+ * @param label - Marker label.
+ * @param timestamp - Marker time.
+ * @param timeDomain - Shared timeline.
+ * @param dimensions - SVG dimensions.
+ * @returns SVG marker group.
+ */
+function renderHistoryMarker(
+  label: string,
+  timestamp: number,
+  timeDomain: { minimum: number; maximum: number },
+  dimensions: { width: number; height: number },
+) {
+  const x = scaleHistoryValue(
+    timestamp,
+    timeDomain.minimum,
+    timeDomain.maximum,
+    0,
+    dimensions.width,
+  );
+  return (
+    <g key={label} className={`arbitrage-history-marker ${label}`}>
+      <line x1={x} x2={x} y1="0" y2={dimensions.height - 24} />
+      <text x={Math.min(dimensions.width - 72, Math.max(4, x + 4))} y="10">
+        {label}
+      </text>
+    </g>
+  );
+}
+
+/**
+ * Scales one history value into an SVG coordinate.
+ *
+ * @param value - Source value.
+ * @param inputMinimum - Source minimum.
+ * @param inputMaximum - Source maximum.
+ * @param outputMinimum - Target minimum.
+ * @param outputMaximum - Target maximum.
+ * @returns Scaled target value.
+ */
+function scaleHistoryValue(
+  value: number,
+  inputMinimum: number,
+  inputMaximum: number,
+  outputMinimum: number,
+  outputMaximum: number,
+): number {
+  return (
+    outputMinimum +
+    ((value - inputMinimum) / (inputMaximum - inputMinimum)) *
+      (outputMaximum - outputMinimum)
+  );
+}
+
+/**
+ * Formats a chart date in the product timezone.
+ *
+ * @param timestamp - Unix milliseconds.
+ * @returns Short date label.
+ */
+function formatHistoryDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "America/New_York",
+  });
+}
+
+/**
+ * Formats a chart value in cents.
+ *
+ * @param value - Cents per share.
+ * @returns Cents label.
+ */
+function formatHistoryCents(value: number): string {
+  return `${value.toFixed(1)}¢`;
 }
 
 /** Properties for one numeric table cell. */

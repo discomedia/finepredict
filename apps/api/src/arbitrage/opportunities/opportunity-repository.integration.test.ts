@@ -10,6 +10,7 @@ import {
   arbitrageKalshiFeeSchedules,
   arbitrageMarkets,
   arbitrageOpportunities,
+  arbitrageOpportunityHistory,
   arbitrageScans,
   arbitrageServiceLocks,
   arbitrageServiceRuns,
@@ -57,6 +58,7 @@ describe("arbitrage Postgres persistence", () => {
     try {
       await resources.database.transaction(async (transaction) => {
         await transaction.delete(arbitrageOpportunities);
+        await transaction.delete(arbitrageOpportunityHistory);
         await transaction.delete(arbitrageScans);
         await transaction.delete(arbitrageServiceRuns);
         await transaction.delete(arbitrageServiceLocks);
@@ -149,6 +151,7 @@ describe("arbitrage Postgres persistence", () => {
     try {
       await resources.database.transaction(async (transaction) => {
         await transaction.delete(arbitrageOpportunities);
+        await transaction.delete(arbitrageOpportunityHistory);
         await transaction.delete(arbitrageScans);
         const repository = new OpportunityRepository(
           transaction as unknown as FinePredictDatabase,
@@ -207,6 +210,54 @@ describe("arbitrage Postgres persistence", () => {
 
     expect(rejectedConcurrentOperation).toBe(true);
     expect(ranOperation).toBe(false);
+  });
+
+  it("deduplicates hourly observations and preserves history metadata", async () => {
+    let hourlyHistory: Awaited<
+      ReturnType<OpportunityRepository["getOpportunityHistory"]>
+    >;
+    try {
+      await resources.database.transaction(async (transaction) => {
+        await transaction.delete(arbitrageOpportunities);
+        await transaction.delete(arbitrageOpportunityHistory);
+        const repository = new OpportunityRepository(
+          transaction as unknown as FinePredictDatabase,
+        );
+        const first = opportunityFixture();
+        const second = {
+          ...first,
+          observedAtIso: "2026-07-24T00:45:00.000Z",
+          buyYesAveragePriceDollars: 0.42,
+          netEdgeDollarsPerShare: 0.07,
+        };
+        const third = {
+          ...first,
+          observedAtIso: "2026-07-24T01:05:00.000Z",
+          buyYesAveragePriceDollars: 0.46,
+          netEdgeDollarsPerShare: 0.03,
+        };
+        await repository.saveScan(scanResult("history-1", [first]));
+        await repository.saveScan(scanResult("history-2", [second]));
+        await repository.saveScan(scanResult("history-3", [third]));
+        hourlyHistory = await repository.getOpportunityHistory(
+          first.opportunityId,
+        );
+        throw rollbackMarker;
+      });
+    } catch (error) {
+      if (error !== rollbackMarker) {
+        throw error;
+      }
+    }
+
+    expect(hourlyHistory).toMatchObject({
+      opportunityId: "pair-integration",
+      detectedAtIso: "2026-07-24T00:00:00.000Z",
+      points: [
+        { observedAtIso: "2026-07-24T00:00:00.000Z" },
+        { observedAtIso: "2026-07-24T01:05:00.000Z" },
+      ],
+    });
   });
 });
 

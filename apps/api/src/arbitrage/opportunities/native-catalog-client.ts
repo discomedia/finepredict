@@ -14,6 +14,7 @@ const kalshiMarketSchema = z.object({
   rules_primary: z.string().default(""),
   rules_secondary: z.string().default(""),
   status: z.string(),
+  open_time: z.string().optional(),
   close_time: z.string().optional(),
   updated_time: z.string().optional(),
   yes_ask_dollars: z.coerce.number().default(0),
@@ -56,6 +57,7 @@ const polymarketMarketSchema = z.object({
   outcomes: z.string().default("[]"),
   clobTokenIds: z.string().default("[]"),
   groupItemTitle: z.string().default(""),
+  startDate: z.string().optional(),
   endDate: z.string().optional(),
   updatedAt: z.string().optional(),
   orderMinSize: z.coerce.number().default(0),
@@ -339,6 +341,7 @@ export function normalizeKalshiMarket(
         ? titleCategory
         : providerCategory,
     status: market.status,
+    ...(market.open_time ? { startDateIso: market.open_time } : {}),
     ...(market.close_time ? { endDateIso: market.close_time } : {}),
     minimumOrderSizeShares: 1,
     ...(positivePrice(market.yes_ask_dollars) !== undefined
@@ -406,6 +409,7 @@ export function normalizePolymarketMarket(
       classifyCategory(`${market.question} ${event?.title ?? ""}`),
     ),
     status: "active",
+    ...(market.startDate ? { startDateIso: market.startDate } : {}),
     ...(market.endDate ? { endDateIso: market.endDate } : {}),
     yesTokenId,
     noTokenId,

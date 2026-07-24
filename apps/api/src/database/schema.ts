@@ -532,6 +532,41 @@ export const arbitrageOpportunities = pgTable(
   ],
 );
 
+/** One hourly executable-price observation for a stable arbitrage pair. */
+export const arbitrageOpportunityHistory = pgTable(
+  "arbitrage_opportunity_history",
+  {
+    opportunityId: text("opportunity_id").notNull(),
+    bucketAt: timestamp("bucket_at", { withTimezone: true }).notNull(),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
+    buyYesVenue: text("buy_yes_venue").notNull(),
+    buyNoVenue: text("buy_no_venue").notNull(),
+    buyYesAveragePriceDollars: doublePrecision(
+      "buy_yes_average_price_dollars",
+    ).notNull(),
+    buyNoAveragePriceDollars: doublePrecision(
+      "buy_no_average_price_dollars",
+    ).notNull(),
+    grossEdgeDollarsPerShare: doublePrecision(
+      "gross_edge_dollars_per_share",
+    ).notNull(),
+    netEdgeDollarsPerShare: doublePrecision(
+      "net_edge_dollars_per_share",
+    ).notNull(),
+    roiPercent100: doublePrecision("roi_percent100").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.opportunityId, table.bucketAt],
+      name: "arbitrage_opportunity_history_primary",
+    }),
+    index("arbitrage_opportunity_history_lookup_idx").on(
+      table.opportunityId,
+      table.observedAt,
+    ),
+  ],
+);
+
 /** Auditable summary for one complete catalog match and book scan. */
 export const arbitrageScans = pgTable("arbitrage_scans", {
   scanId: text("scan_id").primaryKey(),
@@ -589,6 +624,7 @@ export const databaseSchema = {
   arbitrageKalshiFeeSchedules,
   arbitrageMarkets,
   arbitrageOpportunities,
+  arbitrageOpportunityHistory,
   arbitrageScans,
   arbitrageServiceLocks,
   arbitrageServiceRuns,

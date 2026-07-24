@@ -22,6 +22,7 @@ import {
   arbitrageKalshiFeeSchedules,
   arbitrageMarkets,
   arbitrageOpportunities,
+  arbitrageOpportunityHistory,
   arbitrageScans,
   arbitrageServiceLocks,
   arbitrageServiceRuns,
@@ -35,6 +36,7 @@ import type {
   OpportunityServiceJobType,
   OpportunityServiceRun,
   ScannedOpportunity,
+  OpportunityHistoryResponse,
 } from "./types.js";
 
 /** Aggregate catalog and opportunity counters exposed to API clients. */
@@ -81,6 +83,7 @@ export interface DurableKalshiFeeSchedule {
 const databaseBatchSize = 500;
 const serviceLeaseDurationMilliseconds = 15 * 60 * 1_000;
 const arbitrageServiceLockName = "finepredict-arbitrage-service";
+const historyMaximumResponsePoints = 10_000;
 
 /** Postgres-backed catalog and current-opportunity store. */
 export class OpportunityRepository {
@@ -309,6 +312,10 @@ export class OpportunityRepository {
           });
         changedOpportunityCount += rows.length;
       }
+      const historyWriteCount = await saveHourlyHistory(
+        transaction,
+        result.opportunities,
+      );
       const deletionConditions: SQL[] = [
         ne(arbitrageOpportunities.scanId, result.scanId),
       ];
@@ -323,7 +330,8 @@ export class OpportunityRepository {
         .delete(arbitrageOpportunities)
         .where(and(...deletionConditions))
         .returning({ opportunityId: arbitrageOpportunities.opportunityId });
-      const databaseWriteCount = changedOpportunityCount + deleted.length + 1;
+      const databaseWriteCount =
+        changedOpportunityCount + deleted.length + historyWriteCount + 1;
       await transaction.insert(arbitrageScans).values({
         scanId: result.scanId,
         completedAt: new Date(),
@@ -375,6 +383,10 @@ export class OpportunityRepository {
           });
         changedOpportunityCount += rows.length;
       }
+      const historyWriteCount = await saveHourlyHistory(
+        transaction,
+        result.opportunities,
+      );
       const updatedIds = new Set(
         result.opportunities.map((opportunity) => opportunity.opportunityId),
       );
@@ -396,7 +408,8 @@ export class OpportunityRepository {
       return {
         changedOpportunityCount,
         deletedOpportunityCount,
-        databaseWriteCount: changedOpportunityCount + deletedOpportunityCount,
+        databaseWriteCount:
+          changedOpportunityCount + deletedOpportunityCount + historyWriteCount,
       };
     });
   }
@@ -464,6 +477,64 @@ export class OpportunityRepository {
       .where(eq(arbitrageOpportunities.opportunityId, opportunityId))
       .limit(1);
     return row?.payload as ScannedOpportunity | undefined;
+  }
+
+  /**
+   * Loads hourly executable prices and timeline markers for one current pair.
+   *
+   * @param opportunityId - Stable opportunity identifier.
+   * @returns History response, or undefined when the pair is not current.
+   */
+  public async getOpportunityHistory(
+    opportunityId: string,
+  ): Promise<OpportunityHistoryResponse | undefined> {
+    const [opportunityRow] = await this.database
+      .select({ payload: arbitrageOpportunities.payload })
+      .from(arbitrageOpportunities)
+      .where(eq(arbitrageOpportunities.opportunityId, opportunityId))
+      .limit(1);
+    const opportunity = opportunityRow?.payload as
+      ScannedOpportunity | undefined;
+    if (!opportunity) {
+      return undefined;
+    }
+    const rows = await this.database
+      .select()
+      .from(arbitrageOpportunityHistory)
+      .where(eq(arbitrageOpportunityHistory.opportunityId, opportunityId))
+      .orderBy(asc(arbitrageOpportunityHistory.observedAt))
+      .limit(historyMaximumResponsePoints);
+    const originDates = [
+      opportunity.kalshi.startDateIso,
+      opportunity.polymarket.startDateIso,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => new Date(value))
+      .filter((value) => !Number.isNaN(value.getTime()))
+      .sort((left, right) => left.getTime() - right.getTime());
+    const points = rows.map((row) => ({
+      opportunityId: row.opportunityId,
+      observedAtIso: row.observedAt.toISOString(),
+      buyYesVenue: row.buyYesVenue as "kalshi" | "polymarket",
+      buyNoVenue: row.buyNoVenue as "kalshi" | "polymarket",
+      buyYesAveragePriceDollars: row.buyYesAveragePriceDollars,
+      buyNoAveragePriceDollars: row.buyNoAveragePriceDollars,
+      grossEdgeDollarsPerShare: row.grossEdgeDollarsPerShare,
+      netEdgeDollarsPerShare: row.netEdgeDollarsPerShare,
+      roiPercent100: row.roiPercent100,
+    }));
+    const latestPoint = points.at(-1);
+    return {
+      opportunityId,
+      ...(originDates[0]
+        ? { contractOriginAtIso: originDates[0].toISOString() }
+        : {}),
+      ...(points[0] ? { detectedAtIso: points[0].observedAtIso } : {}),
+      ...(latestPoint
+        ? { latestObservedAtIso: latestPoint.observedAtIso }
+        : {}),
+      points,
+    };
   }
 
   /**
@@ -661,6 +732,7 @@ function createStableMarketHash(market: NativeBinaryMarket): string {
       category: market.category,
       status: market.status,
       endDateIso: market.endDateIso,
+      startDateIso: market.startDateIso,
       yesTokenId: market.yesTokenId,
       noTokenId: market.noTokenId,
       marketSlug: market.marketSlug,
@@ -684,6 +756,55 @@ function chunk<T>(values: readonly T[], size: number): readonly T[][] {
     chunks.push(values.slice(index, index + size));
   }
   return chunks;
+}
+
+/**
+ * Inserts only the first observation for each pair and UTC hour.
+ *
+ * @param database - Current database or transaction handle.
+ * @param opportunities - Fresh executable observations.
+ * @returns Number of newly inserted history rows.
+ */
+async function saveHourlyHistory(
+  database: Pick<FinePredictDatabase, "insert">,
+  opportunities: readonly ScannedOpportunity[],
+): Promise<number> {
+  if (opportunities.length === 0) {
+    return 0;
+  }
+  const rows = opportunities.map((opportunity) => {
+    const observedAt = new Date(opportunity.observedAtIso);
+    const bucketAt = new Date(observedAt);
+    bucketAt.setUTCMinutes(0, 0, 0);
+    return {
+      opportunityId: opportunity.opportunityId,
+      bucketAt,
+      observedAt,
+      buyYesVenue: opportunity.direction.buyYesVenue,
+      buyNoVenue: opportunity.direction.buyNoVenue,
+      buyYesAveragePriceDollars: opportunity.buyYesAveragePriceDollars,
+      buyNoAveragePriceDollars: opportunity.buyNoAveragePriceDollars,
+      grossEdgeDollarsPerShare:
+        opportunity.grossProfitDollars / opportunity.executableShares,
+      netEdgeDollarsPerShare: opportunity.netEdgeDollarsPerShare,
+      roiPercent100: opportunity.roiPercent100,
+    } satisfies typeof arbitrageOpportunityHistory.$inferInsert;
+  });
+  let insertedCount = 0;
+  for (const batch of chunk(rows, databaseBatchSize)) {
+    const inserted = await database
+      .insert(arbitrageOpportunityHistory)
+      .values(batch)
+      .onConflictDoNothing({
+        target: [
+          arbitrageOpportunityHistory.opportunityId,
+          arbitrageOpportunityHistory.bucketAt,
+        ],
+      })
+      .returning({ opportunityId: arbitrageOpportunityHistory.opportunityId });
+    insertedCount += inserted.length;
+  }
+  return insertedCount;
 }
 
 /**

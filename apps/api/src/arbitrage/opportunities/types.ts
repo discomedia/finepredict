@@ -45,6 +45,8 @@ export interface NativeBinaryMarket {
   readonly status: string;
   /** Venue closing or resolution timestamp when supplied. */
   readonly endDateIso?: string;
+  /** Venue-reported contract opening or creation timestamp. */
+  readonly startDateIso?: string;
   /** YES token identifier for Polymarket. */
   readonly yesTokenId?: string;
   /** NO token identifier for Polymarket. */
@@ -227,6 +229,42 @@ export interface OpportunityListItem {
   readonly observedAtIso: string;
   /** Deterministic lexical score on a scale of 100. */
   readonly similarityPercent100: number;
+}
+
+/** One deduplicated hourly executable-price observation. */
+export interface OpportunityHistoryPoint {
+  /** Stable pair identifier. */
+  readonly opportunityId: string;
+  /** Actual direct-book observation timestamp. */
+  readonly observedAtIso: string;
+  /** Venue where the observed YES leg was bought. */
+  readonly buyYesVenue: "kalshi" | "polymarket";
+  /** Venue where the observed NO leg was bought. */
+  readonly buyNoVenue: "kalshi" | "polymarket";
+  /** Average executable YES-leg price. */
+  readonly buyYesAveragePriceDollars: number;
+  /** Average executable NO-leg price. */
+  readonly buyNoAveragePriceDollars: number;
+  /** Gross spread per paired share before fees. */
+  readonly grossEdgeDollarsPerShare: number;
+  /** Post-fee spread per paired share. */
+  readonly netEdgeDollarsPerShare: number;
+  /** Post-fee return on cash outlay. */
+  readonly roiPercent100: number;
+}
+
+/** Hourly spread history and timeline markers for one current opportunity. */
+export interface OpportunityHistoryResponse {
+  /** Stable pair identifier. */
+  readonly opportunityId: string;
+  /** Earliest venue-reported contract start date, when available. */
+  readonly contractOriginAtIso?: string;
+  /** First hourly observation persisted by the scanner, when available. */
+  readonly detectedAtIso?: string;
+  /** Latest persisted observation, when available. */
+  readonly latestObservedAtIso?: string;
+  /** Ordered hourly observations. */
+  readonly points: readonly OpportunityHistoryPoint[];
 }
 
 /** Summary returned after refreshing both native venue catalogs. */

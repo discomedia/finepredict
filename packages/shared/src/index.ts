@@ -623,6 +623,33 @@ export const ArbitrageOpportunitySchema = z.object({
 /** One arbitrage opportunity returned to the React dashboard. */
 export type ArbitrageOpportunity = z.infer<typeof ArbitrageOpportunitySchema>;
 
+/** One hourly scanner observation used by the arbitrage history chart. */
+export const ArbitrageOpportunityHistoryPointSchema = z.object({
+  opportunityId: z.string().min(1),
+  observedAtIso: z.string().datetime(),
+  buyYesVenue: MarketPlatformSchema,
+  buyNoVenue: MarketPlatformSchema,
+  buyYesAveragePriceDollars: z.number().min(0).max(1),
+  buyNoAveragePriceDollars: z.number().min(0).max(1),
+  grossEdgeDollarsPerShare: z.number(),
+  netEdgeDollarsPerShare: z.number(),
+  roiPercent100: z.number(),
+});
+
+/** Hourly spread history returned for one current opportunity. */
+export const ArbitrageOpportunityHistoryResponseSchema = z.object({
+  opportunityId: z.string().min(1),
+  contractOriginAtIso: z.string().datetime().optional(),
+  detectedAtIso: z.string().datetime().optional(),
+  latestObservedAtIso: z.string().datetime().optional(),
+  points: z.array(ArbitrageOpportunityHistoryPointSchema),
+});
+
+/** Validated hourly arbitrage history response. */
+export type ArbitrageOpportunityHistoryResponse = z.infer<
+  typeof ArbitrageOpportunityHistoryResponseSchema
+>;
+
 /** Result of resolving an arbitrage pair to a reusable comparison report. */
 export const ArbitrageComparisonReportResponseSchema = z.object({
   slug: z.string().min(1),
