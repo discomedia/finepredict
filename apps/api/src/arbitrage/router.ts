@@ -6,6 +6,7 @@ import type {
   OpportunityListItem,
   OpportunityListMarket,
   OpportunityRelationship,
+  OpportunityStrategy,
   OpportunityStatus,
   ScannedOpportunity,
 } from "./opportunities/types.js";
@@ -24,6 +25,12 @@ const opportunityRelationships = new Set<OpportunityRelationship>([
   "near_arbitrage",
   "relative_value",
   "unreviewed",
+]);
+const opportunityStrategies = new Set<OpportunityStrategy>([
+  "cross_venue_equivalent",
+  "routed_multi_outcome",
+  "threshold_deadline_dominance",
+  "compound_upper_bound",
 ]);
 
 /**
@@ -128,10 +135,19 @@ export function createArbitrageRouter(
           response.status(404).json({ error: "Opportunity not found." });
           return;
         }
-        const compact = toOpportunityListItem(opportunity);
+        if (opportunity.strategy !== "cross_venue_equivalent") {
+          response.status(400).json({
+            error:
+              "Comparison reports currently support cross-venue equivalent pairs only.",
+          });
+          return;
+        }
         const resolution = await reportService.getOrCreateComparisonReport(
           `arbitrage:${opportunityId}`,
-          [compact.kalshi.marketUrl, compact.polymarket.marketUrl],
+          [
+            toOpportunityListMarket(opportunity.kalshi).marketUrl,
+            toOpportunityListMarket(opportunity.polymarket).marketUrl,
+          ],
         );
         response.status(resolution.reused ? 200 : 201).json({
           slug: resolution.report.slug,
@@ -212,7 +228,10 @@ export function parseOpportunityFilters(
   searchParams: URLSearchParams,
 ): OpportunityListFilters {
   const strategy = searchParams.get("strategy");
-  if (strategy !== null && strategy !== "cross_venue_equivalent") {
+  if (
+    strategy !== null &&
+    !opportunityStrategies.has(strategy as OpportunityStrategy)
+  ) {
     throw new Error(`Unsupported strategy ${strategy}.`);
   }
   const statusValue = searchParams.get("status");
@@ -238,7 +257,7 @@ export function parseOpportunityFilters(
     "reviewedOnly",
   );
   return {
-    ...(strategy ? { strategy } : {}),
+    ...(strategy ? { strategy: strategy as OpportunityStrategy } : {}),
     ...(searchParams.get("category")
       ? { category: searchParams.get("category") ?? "" }
       : {}),
@@ -276,6 +295,51 @@ export function parseOpportunityFilters(
 export function toOpportunityListItem(
   opportunity: ScannedOpportunity,
 ): OpportunityListItem {
+  if (opportunity.strategy !== "cross_venue_equivalent") {
+    return {
+      opportunityId: opportunity.opportunityId,
+      strategy: opportunity.strategy,
+      status: opportunity.status,
+      title: opportunity.title,
+      category: opportunity.category,
+      matchConfidence: opportunity.matchConfidence,
+      relationship: opportunity.relationship,
+      settlementRisks: opportunity.settlementRisks,
+      proofKind: opportunity.proofKind,
+      proofSummary: opportunity.proofSummary,
+      legs: opportunity.legs.map((leg) => ({
+        market: toOpportunityListMarket(leg.market),
+        side: leg.side,
+        outcomeKey: leg.outcomeKey,
+        shares: leg.shares,
+        averagePriceDollars: leg.averagePriceDollars,
+        feeDollars: leg.feeDollars,
+      })),
+      executableShares: opportunity.executableShares,
+      minimumPayoutDollarsPerShare: opportunity.minimumPayoutDollarsPerShare,
+      grossEdgeDollarsPerShare:
+        opportunity.grossProfitDollars / opportunity.executableShares,
+      feeDollarsPerShare:
+        opportunity.feesDollars / opportunity.executableShares,
+      grossProfitDollars: opportunity.grossProfitDollars,
+      feesDollars: opportunity.feesDollars,
+      netProfitDollars: opportunity.netProfitDollars,
+      conditionalNetProfitDollars: opportunity.conditionalNetProfitDollars,
+      worstCaseSettlementDivergenceLossDollars:
+        opportunity.worstCaseSettlementDivergenceLossDollars,
+      ...(opportunity.breakEvenAdverseDivergenceProbabilityPercent100 !==
+      undefined
+        ? {
+            breakEvenAdverseDivergenceProbabilityPercent100:
+              opportunity.breakEvenAdverseDivergenceProbabilityPercent100,
+          }
+        : {}),
+      netEdgeDollarsPerShare: opportunity.netEdgeDollarsPerShare,
+      roiPercent100: opportunity.roiPercent100,
+      observedAtIso: opportunity.observedAtIso,
+      similarityPercent100: opportunity.similarityPercent100,
+    };
+  }
   return {
     opportunityId: opportunity.opportunityId,
     strategy: opportunity.strategy,

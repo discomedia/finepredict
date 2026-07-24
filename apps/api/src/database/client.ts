@@ -35,6 +35,10 @@ export function createDatabaseResources(
     max: 3,
     idle_timeout: 10,
     connect_timeout: 10,
+    fetch_types: false,
+    connection: {
+      application_name: "finepredict",
+    },
   });
   return {
     database: createDrizzleDatabase(sql),

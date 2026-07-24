@@ -117,6 +117,12 @@ describe("ArbitragePage", () => {
     expect(screen.getByText("$0.30")).toBeInTheDocument();
     expect(screen.getByText("70,000")).toBeInTheDocument();
     expect(screen.getByText("25")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Strategy" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Routed outcome pools" }),
+    ).toBeInTheDocument();
     expect(screen.getAllByText(/featured appearance differs/i)).toHaveLength(2);
     expect(screen.getAllByText(/Dec 31, 2026/)).toHaveLength(2);
 

@@ -10,6 +10,7 @@ import { KalshiRequestScheduler } from "../discovery/kalshi-request-scheduler.js
 import type {
   DirectPairContext,
   DirectPairSnapshot,
+  DirectMarketRequest,
   PairMarketDataSource,
 } from "./types.js";
 
@@ -45,6 +46,16 @@ export interface DirectPairSnapshotBatch {
   /** Safe per-pair failure messages keyed by stable pair ID. */
   readonly errorsByPairId: ReadonlyMap<string, string>;
   /** External HTTP requests consumed by this batch. */
+  readonly requestCount: number;
+}
+
+/** Deduplicated books collected once for every detector in a scanner run. */
+export interface DirectMarketSnapshotBatch {
+  /** Successful snapshots keyed by `venue:marketId`. */
+  readonly snapshotsByMarketKey: ReadonlyMap<string, BinaryOrderBookSnapshot>;
+  /** Isolated failures keyed by `venue:marketId`. */
+  readonly errorsByMarketKey: ReadonlyMap<string, string>;
+  /** Exact public request count consumed by the unioned batch. */
   readonly requestCount: number;
 }
 
@@ -119,73 +130,37 @@ export class DirectMarketDataClient implements PairMarketDataSource {
       throw new Error("kalshiConcurrency must be a positive integer");
     }
     const startedAtMs = Date.now();
-    const requestCountBefore = this.externalRequestCount;
     const errorsByPairId = new Map<string, string>();
-    const uniqueDetails = [
-      ...new Map(
-        contexts.map((context) => [
-          context.polymarketDetails.conditionId,
-          context.polymarketDetails,
-        ]),
-      ).values(),
-    ];
-    let polymarketByConditionId: ReadonlyMap<string, BinaryOrderBookSnapshot>;
-    try {
-      polymarketByConditionId =
-        await this.getPolymarketBinaryOrderBooks(uniqueDetails);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      for (const context of contexts) {
-        errorsByPairId.set(context.pair.pairId, message);
-      }
-      return {
-        snapshotsByPairId: new Map(),
-        errorsByPairId,
-        requestCount: this.externalRequestCount - requestCountBefore,
-      };
-    }
-    const uniqueKalshiMarketIds = [
-      ...new Set(contexts.map((context) => context.pair.kalshi.marketId)),
-    ];
-    const kalshiResults = await mapWithConcurrency(
-      uniqueKalshiMarketIds,
+    const marketBatch = await this.getMarketSnapshots(
+      contexts.flatMap((context) => [
+        {
+          venue: "kalshi" as const,
+          marketId: context.pair.kalshi.marketId,
+        },
+        {
+          venue: "polymarket" as const,
+          marketId: context.polymarketDetails.conditionId,
+          polymarketDetails: context.polymarketDetails,
+        },
+      ]),
       kalshiConcurrency,
-      async (marketId) => {
-        try {
-          return {
-            marketId,
-            snapshot: await this.getKalshiBinaryOrderBook(marketId),
-          };
-        } catch (error: unknown) {
-          return {
-            marketId,
-            error: error instanceof Error ? error.message : String(error),
-          };
-        }
-      },
     );
-    const kalshiByMarketId = new Map<string, BinaryOrderBookSnapshot>();
-    const kalshiErrorsByMarketId = new Map<string, string>();
-    for (const result of kalshiResults) {
-      if (result.snapshot) {
-        kalshiByMarketId.set(result.marketId, result.snapshot);
-      } else {
-        kalshiErrorsByMarketId.set(
-          result.marketId,
-          result.error ?? "Unknown Kalshi order-book failure",
-        );
-      }
-    }
     const snapshotsByPairId = new Map<string, DirectPairSnapshot>();
     for (const context of contexts) {
-      const kalshi = kalshiByMarketId.get(context.pair.kalshi.marketId);
-      const polymarket = polymarketByConditionId.get(
+      const kalshiKey = createDirectMarketKey(
+        "kalshi",
+        context.pair.kalshi.marketId,
+      );
+      const polymarketKey = createDirectMarketKey(
+        "polymarket",
         context.polymarketDetails.conditionId,
       );
+      const kalshi = marketBatch.snapshotsByMarketKey.get(kalshiKey);
+      const polymarket = marketBatch.snapshotsByMarketKey.get(polymarketKey);
       if (!kalshi) {
         errorsByPairId.set(
           context.pair.pairId,
-          kalshiErrorsByMarketId.get(context.pair.kalshi.marketId) ??
+          marketBatch.errorsByMarketKey.get(kalshiKey) ??
             "Kalshi order book was missing from the batch",
         );
         continue;
@@ -193,7 +168,8 @@ export class DirectMarketDataClient implements PairMarketDataSource {
       if (!polymarket) {
         errorsByPairId.set(
           context.pair.pairId,
-          `Polymarket order book was missing for ${context.polymarketDetails.conditionId}`,
+          marketBatch.errorsByMarketKey.get(polymarketKey) ??
+            `Polymarket order book was missing for ${context.polymarketDetails.conditionId}`,
         );
         continue;
       }
@@ -209,6 +185,104 @@ export class DirectMarketDataClient implements PairMarketDataSource {
     return {
       snapshotsByPairId,
       errorsByPairId,
+      requestCount: marketBatch.requestCount,
+    };
+  }
+
+  /**
+   * Collects one deduplicated registry of books for every scanner strategy.
+   *
+   * @param requests - Union of venue-native market requirements.
+   * @param kalshiConcurrency - Maximum active Kalshi workers.
+   * @returns Successful books, isolated failures, and exact request count.
+   */
+  public async getMarketSnapshots(
+    requests: readonly DirectMarketRequest[],
+    kalshiConcurrency: number,
+  ): Promise<DirectMarketSnapshotBatch> {
+    if (!Number.isInteger(kalshiConcurrency) || kalshiConcurrency < 1) {
+      throw new Error("kalshiConcurrency must be a positive integer");
+    }
+    const requestCountBefore = this.externalRequestCount;
+    const uniqueRequests = [
+      ...new Map(
+        requests.map((request) => [
+          createDirectMarketKey(request.venue, request.marketId),
+          request,
+        ]),
+      ).values(),
+    ];
+    const snapshotsByMarketKey = new Map<string, BinaryOrderBookSnapshot>();
+    const errorsByMarketKey = new Map<string, string>();
+    const polymarketRequests = uniqueRequests.filter(
+      (request) => request.venue === "polymarket",
+    );
+    const polymarketDetails = polymarketRequests.flatMap((request) =>
+      request.polymarketDetails ? [request.polymarketDetails] : [],
+    );
+    if (polymarketDetails.length !== polymarketRequests.length) {
+      throw new Error("Every Polymarket book request requires token metadata");
+    }
+    if (polymarketDetails.length > 0) {
+      try {
+        const books =
+          await this.getPolymarketBinaryOrderBooks(polymarketDetails);
+        for (const request of polymarketRequests) {
+          const book = books.get(request.marketId);
+          const key = createDirectMarketKey("polymarket", request.marketId);
+          if (book) {
+            snapshotsByMarketKey.set(key, book);
+          } else {
+            errorsByMarketKey.set(
+              key,
+              `Polymarket order book was missing for ${request.marketId}`,
+            );
+          }
+        }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        for (const request of polymarketRequests) {
+          errorsByMarketKey.set(
+            createDirectMarketKey("polymarket", request.marketId),
+            message,
+          );
+        }
+      }
+    }
+    const kalshiRequests = uniqueRequests.filter(
+      (request) => request.venue === "kalshi",
+    );
+    const kalshiResults = await mapWithConcurrency(
+      kalshiRequests,
+      kalshiConcurrency,
+      async (request) => {
+        try {
+          return {
+            request,
+            snapshot: await this.getKalshiBinaryOrderBook(request.marketId),
+          };
+        } catch (error: unknown) {
+          return {
+            request,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      },
+    );
+    for (const result of kalshiResults) {
+      const key = createDirectMarketKey("kalshi", result.request.marketId);
+      if (result.snapshot) {
+        snapshotsByMarketKey.set(key, result.snapshot);
+      } else {
+        errorsByMarketKey.set(
+          key,
+          result.error ?? "Unknown Kalshi order-book failure",
+        );
+      }
+    }
+    return {
+      snapshotsByMarketKey,
+      errorsByMarketKey,
       requestCount: this.externalRequestCount - requestCountBefore,
     };
   }
@@ -378,6 +452,20 @@ export class DirectMarketDataClient implements PairMarketDataSource {
     }
     return parsed;
   }
+}
+
+/**
+ * Builds the canonical key used by the scan-wide snapshot registry.
+ *
+ * @param venue - Public prediction-market venue.
+ * @param marketId - Venue-native market identifier.
+ * @returns Stable registry key.
+ */
+export function createDirectMarketKey(
+  venue: "kalshi" | "polymarket",
+  marketId: string,
+): string {
+  return `${venue}:${marketId}`;
 }
 
 /**

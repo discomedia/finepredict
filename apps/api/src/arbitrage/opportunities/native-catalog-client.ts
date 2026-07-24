@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { HttpServiceError } from "../common/http.js";
+import { KalshiRequestScheduler } from "../discovery/kalshi-request-scheduler.js";
 import type {
   NativeBinaryMarket,
   NativeCatalogRefreshResult,
@@ -33,6 +34,8 @@ const kalshiEventSchema = z.object({
   series_ticker: z.string(),
   title: z.string().default(""),
   category: z.string().default("other"),
+  mutually_exclusive: z.boolean().default(false),
+  collateral_return_type: z.string().default(""),
 });
 
 const kalshiEventsPageSchema = z.object({
@@ -67,6 +70,8 @@ const polymarketMarketSchema = z.object({
   liquidityNum: z.coerce.number().default(0),
   feesEnabled: z.boolean().default(false),
   feeSchedule: feeScheduleSchema.optional(),
+  negRisk: z.boolean().default(false),
+  negRiskOther: z.boolean().default(false),
   events: z
     .array(
       z.object({
@@ -92,6 +97,8 @@ export interface NativeCatalogClientOptions {
   readonly maximumKalshiMarkets?: number;
   /** Safety cap for retained Polymarket markets. */
   readonly maximumPolymarketMarkets?: number;
+  /** Shared scheduler coordinating catalog, fee, and order-book Kalshi reads. */
+  readonly kalshiRequestScheduler?: KalshiRequestScheduler;
 }
 
 /** Read-only public client for the complete native venue catalogs. */
@@ -100,6 +107,7 @@ export class NativeCatalogClient {
   private readonly polymarketGammaBaseUrl: string;
   private readonly maximumKalshiMarkets: number;
   private readonly maximumPolymarketMarkets: number;
+  private readonly kalshiRequestScheduler: KalshiRequestScheduler;
   private requestCount = 0;
   private nextRequestStartAtMs = 0;
   private requestStartChain: Promise<void> = Promise.resolve();
@@ -116,6 +124,8 @@ export class NativeCatalogClient {
       options.polymarketGammaBaseUrl ?? "https://gamma-api.polymarket.com";
     this.maximumKalshiMarkets = options.maximumKalshiMarkets ?? 100_000;
     this.maximumPolymarketMarkets = options.maximumPolymarketMarkets ?? 20_000;
+    this.kalshiRequestScheduler =
+      options.kalshiRequestScheduler ?? new KalshiRequestScheduler();
   }
 
   /**
@@ -166,7 +176,7 @@ export class NativeCatalogClient {
         url.searchParams.set("cursor", cursor);
       }
       const page = kalshiMarketsPageSchema.parse(
-        await this.getJson(url, "Kalshi markets API"),
+        await this.getKalshiJson(url, "Kalshi markets API"),
       );
       markets.push(...page.markets);
       cursor = page.cursor;
@@ -197,7 +207,7 @@ export class NativeCatalogClient {
         url.searchParams.set("cursor", cursor);
       }
       const page = kalshiEventsPageSchema.parse(
-        await this.getJson(url, "Kalshi events API"),
+        await this.getKalshiJson(url, "Kalshi events API"),
       );
       events.push(...page.events);
       cursor = page.cursor;
@@ -225,7 +235,7 @@ export class NativeCatalogClient {
         url.searchParams.set("after_cursor", afterCursor);
       }
       const page = polymarketKeysetPageSchema.parse(
-        await this.getJson(url, "Polymarket Gamma markets API"),
+        await this.getPolymarketJson(url, "Polymarket Gamma markets API"),
       );
       markets.push(...page.markets);
       const nextCursor = page.next_cursor;
@@ -242,13 +252,26 @@ export class NativeCatalogClient {
   }
 
   /**
-   * Counts one public request and delegates JSON validation to each caller.
+   * Routes one Kalshi catalog request through the scanner-wide scheduler.
+   *
+   * @param url - Public Kalshi URL.
+   * @param service - Service name used in errors.
+   * @returns Parsed unknown JSON.
+   */
+  private async getKalshiJson(url: URL, service: string): Promise<unknown> {
+    return this.kalshiRequestScheduler.requestJson(url, service, () => {
+      this.requestCount += 1;
+    });
+  }
+
+  /**
+   * Counts and retries one Polymarket catalog request.
    *
    * @param url - Public venue URL.
    * @param service - Service name used in errors.
    * @returns Parsed unknown JSON.
    */
-  private async getJson(url: URL, service: string): Promise<unknown> {
+  private async getPolymarketJson(url: URL, service: string): Promise<unknown> {
     const maximumAttempts = 4;
     for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
       await this.waitForRequestSlot();
@@ -353,6 +376,10 @@ export function normalizeKalshiMarket(
     volume: market.volume_fp,
     liquidity: market.liquidity_dollars,
     ...(market.updated_time ? { sourceUpdatedAtIso: market.updated_time } : {}),
+    ...(event?.mutually_exclusive ? { eventMutuallyExclusive: true } : {}),
+    ...(event?.collateral_return_type
+      ? { collateralReturnType: event.collateral_return_type }
+      : {}),
   };
 }
 
@@ -422,6 +449,8 @@ export function normalizePolymarketMarket(
     volume: market.volumeNum,
     liquidity: market.liquidityNum,
     ...(market.updatedAt ? { sourceUpdatedAtIso: market.updatedAt } : {}),
+    ...(market.negRisk ? { negativeRisk: true } : {}),
+    ...(market.negRiskOther ? { negativeRiskOther: true } : {}),
   };
 }
 

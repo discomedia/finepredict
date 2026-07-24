@@ -155,6 +155,8 @@ export interface ArbitrageOpportunityFilters {
   relationship?: ArbitrageRelationship;
   /** Optional normalized category restriction. */
   category?: string;
+  /** Optional deterministic strategy restriction. */
+  strategy?: import("@finepredict/shared").ArbitrageStrategy;
   /** Whether provisional deterministic matches are excluded. */
   reviewedOnly: boolean;
 }
@@ -183,6 +185,9 @@ export async function getArbitrageOpportunities(
   }
   if (filters.category) {
     query.set("category", filters.category);
+  }
+  if (filters.strategy) {
+    query.set("strategy", filters.strategy);
   }
   return ArbitrageOpportunityListResponseSchema.parse(
     await requestJson(`/api/arbitrage/opportunities?${query.toString()}`),

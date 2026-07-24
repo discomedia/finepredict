@@ -19,6 +19,7 @@ import {
 
 import type { FinePredictDatabase } from "../../database/client.js";
 import {
+  arbitrageCatalogCounts,
   arbitrageKalshiFeeSchedules,
   arbitrageMarkets,
   arbitrageOpportunities,
@@ -99,24 +100,22 @@ export class OpportunityRepository {
    * removed contracts.
    *
    * @param markets - Complete active catalog refresh.
-   * @param refreshedAtIso - Refresh completion timestamp.
    * @returns Exact changed-row counts.
    */
   public async saveCatalog(
     markets: readonly NativeBinaryMarket[],
-    refreshedAtIso: string,
   ): Promise<CatalogPersistenceStats> {
     const existingRows = await this.database
       .select({
         venue: arbitrageMarkets.venue,
         marketId: arbitrageMarkets.marketId,
-        payload: arbitrageMarkets.payload,
+        contentHash: arbitrageMarkets.contentHash,
       })
       .from(arbitrageMarkets);
     const existingHashes = new Map(
       existingRows.map((row) => [
         `${row.venue}:${row.marketId}`,
-        createStableMarketHash(row.payload as NativeBinaryMarket),
+        row.contentHash,
       ]),
     );
     const uniqueMarkets = new Map(
@@ -135,7 +134,14 @@ export class OpportunityRepository {
     const staleRows = existingRows.filter(
       (row) => !uniqueMarkets.has(`${row.venue}:${row.marketId}`),
     );
-    const refreshedAt = new Date(refreshedAtIso);
+    const marketCounts = new Map<NativeBinaryMarket["venue"], number>([
+      ["kalshi", 0],
+      ["polymarket", 0],
+    ]);
+    for (const market of uniqueMarkets.values()) {
+      marketCounts.set(market.venue, (marketCounts.get(market.venue) ?? 0) + 1);
+    }
+    let changedCountRowCount = 0;
 
     await this.database.transaction(async (transaction) => {
       for (const batch of chunk(changed, databaseBatchSize)) {
@@ -145,23 +151,13 @@ export class OpportunityRepository {
             batch.map(({ market, contentHash }) => ({
               venue: market.venue,
               marketId: market.marketId,
-              eventId: market.eventId,
-              category: market.category,
-              sourceUpdatedAt: parseOptionalDate(market.sourceUpdatedAtIso),
-              refreshedAt,
               contentHash,
-              payload: market,
             })),
           )
           .onConflictDoUpdate({
             target: [arbitrageMarkets.venue, arbitrageMarkets.marketId],
             set: {
-              eventId: sql`excluded.event_id`,
-              category: sql`excluded.category`,
-              sourceUpdatedAt: sql`excluded.source_updated_at`,
-              refreshedAt: sql`excluded.refreshed_at`,
               contentHash: sql`excluded.content_hash`,
-              payload: sql`excluded.payload`,
             },
           });
       }
@@ -177,26 +173,36 @@ export class OpportunityRepository {
           await transaction.delete(arbitrageMarkets).where(condition);
         }
       }
+      const countRows = await transaction
+        .insert(arbitrageCatalogCounts)
+        .values(
+          [...marketCounts].map(([venue, marketCount]) => ({
+            venue,
+            marketCount,
+            updatedAt: new Date(),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: arbitrageCatalogCounts.venue,
+          set: {
+            marketCount: sql`excluded.market_count`,
+            updatedAt: sql`excluded.updated_at`,
+          },
+          setWhere: ne(
+            arbitrageCatalogCounts.marketCount,
+            sql`excluded.market_count`,
+          ),
+        })
+        .returning({ venue: arbitrageCatalogCounts.venue });
+      changedCountRowCount = countRows.length;
     });
 
     return {
       changedMarketCount: changed.length,
       deletedMarketCount: staleRows.length,
-      databaseWriteCount: changed.length + staleRows.length,
+      databaseWriteCount:
+        changed.length + staleRows.length + changedCountRowCount,
     };
-  }
-
-  /**
-   * Loads the complete current native catalog.
-   *
-   * @returns Parsed catalog rows.
-   */
-  public async loadCatalog(): Promise<readonly NativeBinaryMarket[]> {
-    const rows = await this.database
-      .select({ payload: arbitrageMarkets.payload })
-      .from(arbitrageMarkets)
-      .orderBy(asc(arbitrageMarkets.venue), asc(arbitrageMarkets.marketId));
-    return rows.map((row) => row.payload as NativeBinaryMarket);
   }
 
   /**
@@ -504,10 +510,12 @@ export class OpportunityRepository {
       .where(eq(arbitrageOpportunityHistory.opportunityId, opportunityId))
       .orderBy(asc(arbitrageOpportunityHistory.observedAt))
       .limit(historyMaximumResponsePoints);
-    const originDates = [
-      opportunity.kalshi.startDateIso,
-      opportunity.polymarket.startDateIso,
-    ]
+    const opportunityMarkets =
+      opportunity.strategy === "cross_venue_equivalent"
+        ? [opportunity.kalshi, opportunity.polymarket]
+        : opportunity.legs.map((leg) => leg.market);
+    const originDates = opportunityMarkets
+      .map((market) => market.startDateIso)
       .filter((value): value is string => Boolean(value))
       .map((value) => new Date(value))
       .filter((value) => !Number.isNaN(value.getTime()))
@@ -515,10 +523,29 @@ export class OpportunityRepository {
     const points = rows.map((row) => ({
       opportunityId: row.opportunityId,
       observedAtIso: row.observedAt.toISOString(),
-      buyYesVenue: row.buyYesVenue as "kalshi" | "polymarket",
-      buyNoVenue: row.buyNoVenue as "kalshi" | "polymarket",
-      buyYesAveragePriceDollars: row.buyYesAveragePriceDollars,
-      buyNoAveragePriceDollars: row.buyNoAveragePriceDollars,
+      ...(row.buyYesVenue
+        ? {
+            buyYesVenue: row.buyYesVenue as "kalshi" | "polymarket",
+          }
+        : {}),
+      ...(row.buyNoVenue
+        ? { buyNoVenue: row.buyNoVenue as "kalshi" | "polymarket" }
+        : {}),
+      ...(row.buyYesAveragePriceDollars !== null
+        ? {
+            buyYesAveragePriceDollars: row.buyYesAveragePriceDollars,
+          }
+        : {}),
+      ...(row.buyNoAveragePriceDollars !== null
+        ? { buyNoAveragePriceDollars: row.buyNoAveragePriceDollars }
+        : {}),
+      ...(Array.isArray(row.legs)
+        ? {
+            legs: row.legs as NonNullable<
+              OpportunityHistoryResponse["points"][number]["legs"]
+            >,
+          }
+        : {}),
       grossEdgeDollarsPerShare: row.grossEdgeDollarsPerShare,
       netEdgeDollarsPerShare: row.netEdgeDollarsPerShare,
       roiPercent100: row.roiPercent100,
@@ -627,11 +654,10 @@ export class OpportunityRepository {
   public async getSummary(): Promise<OpportunityRepositorySummary> {
     const marketCounts = await this.database
       .select({
-        venue: arbitrageMarkets.venue,
-        value: count(),
+        venue: arbitrageCatalogCounts.venue,
+        value: arbitrageCatalogCounts.marketCount,
       })
-      .from(arbitrageMarkets)
-      .groupBy(arbitrageMarkets.venue);
+      .from(arbitrageCatalogCounts);
     const [opportunityCount] = await this.database
       .select({ value: count() })
       .from(arbitrageOpportunities);
@@ -739,6 +765,10 @@ function createStableMarketHash(market: NativeBinaryMarket): string {
       minimumOrderSizeShares: market.minimumOrderSizeShares,
       polymarketFeeRate: market.polymarketFeeRate,
       polymarketFeeExponent: market.polymarketFeeExponent,
+      eventMutuallyExclusive: market.eventMutuallyExclusive,
+      collateralReturnType: market.collateralReturnType,
+      negativeRisk: market.negativeRisk,
+      negativeRiskOther: market.negativeRiskOther,
     }),
   );
 }
@@ -776,14 +806,35 @@ async function saveHourlyHistory(
     const observedAt = new Date(opportunity.observedAtIso);
     const bucketAt = new Date(observedAt);
     bucketAt.setUTCMinutes(0, 0, 0);
+    const legacy =
+      opportunity.strategy === "cross_venue_equivalent"
+        ? {
+            buyYesVenue: opportunity.direction.buyYesVenue,
+            buyNoVenue: opportunity.direction.buyNoVenue,
+            buyYesAveragePriceDollars: opportunity.buyYesAveragePriceDollars,
+            buyNoAveragePriceDollars: opportunity.buyNoAveragePriceDollars,
+          }
+        : {
+            buyYesVenue: null,
+            buyNoVenue: null,
+            buyYesAveragePriceDollars: null,
+            buyNoAveragePriceDollars: null,
+          };
+    const legs =
+      opportunity.strategy === "cross_venue_equivalent"
+        ? null
+        : opportunity.legs.map((leg) => ({
+            venue: leg.market.venue,
+            marketId: leg.market.marketId,
+            side: leg.side,
+            averagePriceDollars: leg.averagePriceDollars,
+          }));
     return {
       opportunityId: opportunity.opportunityId,
       bucketAt,
       observedAt,
-      buyYesVenue: opportunity.direction.buyYesVenue,
-      buyNoVenue: opportunity.direction.buyNoVenue,
-      buyYesAveragePriceDollars: opportunity.buyYesAveragePriceDollars,
-      buyNoAveragePriceDollars: opportunity.buyNoAveragePriceDollars,
+      ...legacy,
+      legs,
       grossEdgeDollarsPerShare:
         opportunity.grossProfitDollars / opportunity.executableShares,
       netEdgeDollarsPerShare: opportunity.netEdgeDollarsPerShare,

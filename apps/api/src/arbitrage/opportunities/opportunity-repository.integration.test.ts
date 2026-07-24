@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -8,7 +9,6 @@ import {
 } from "../../database/client.js";
 import {
   arbitrageKalshiFeeSchedules,
-  arbitrageMarkets,
   arbitrageOpportunities,
   arbitrageOpportunityHistory,
   arbitrageScans,
@@ -57,12 +57,17 @@ describe("arbitrage Postgres persistence", () => {
       | undefined;
     try {
       await resources.database.transaction(async (transaction) => {
+        await transaction.execute(
+          sql`create temporary table arbitrage_markets (like public.arbitrage_markets including all) on commit drop`,
+        );
+        await transaction.execute(
+          sql`set local search_path to pg_temp, public`,
+        );
         await transaction.delete(arbitrageOpportunities);
         await transaction.delete(arbitrageOpportunityHistory);
         await transaction.delete(arbitrageScans);
         await transaction.delete(arbitrageServiceRuns);
         await transaction.delete(arbitrageServiceLocks);
-        await transaction.delete(arbitrageMarkets);
         await transaction.delete(arbitrageKalshiFeeSchedules);
         const repository = new OpportunityRepository(
           transaction as unknown as FinePredictDatabase,
@@ -71,34 +76,22 @@ describe("arbitrage Postgres persistence", () => {
           market("kalshi", "K-INTEGRATION"),
           market("polymarket", "P-INTEGRATION"),
         ];
-        const first = await repository.saveCatalog(
-          markets,
-          "2026-07-24T00:00:00.000Z",
-        );
-        const unchanged = await repository.saveCatalog(
-          markets,
-          "2026-07-24T01:00:00.000Z",
-        );
-        const volatileOnly = await repository.saveCatalog(
-          [
-            {
-              ...markets[0]!,
-              catalogYesAskDollars: 0.45,
-              volume: 100,
-              liquidity: 50,
-              sourceUpdatedAtIso: "2026-07-24T01:59:00.000Z",
-            },
-            markets[1]!,
-          ],
-          "2026-07-24T02:00:00.000Z",
-        );
-        const materiallyChanged = await repository.saveCatalog(
-          [
-            { ...markets[0]!, question: "Will the changed fixture happen?" },
-            markets[1]!,
-          ],
-          "2026-07-24T03:00:00.000Z",
-        );
+        const first = await repository.saveCatalog(markets);
+        const unchanged = await repository.saveCatalog(markets);
+        const volatileOnly = await repository.saveCatalog([
+          {
+            ...markets[0]!,
+            catalogYesAskDollars: 0.45,
+            volume: 100,
+            liquidity: 50,
+            sourceUpdatedAtIso: "2026-07-24T01:59:00.000Z",
+          },
+          markets[1]!,
+        ]);
+        const materiallyChanged = await repository.saveCatalog([
+          { ...markets[0]!, question: "Will the changed fixture happen?" },
+          markets[1]!,
+        ]);
         writeCounts = [
           first.databaseWriteCount,
           unchanged.databaseWriteCount,
@@ -130,7 +123,7 @@ describe("arbitrage Postgres persistence", () => {
       }
     }
 
-    expect(writeCounts).toEqual([2, 0, 0, 1]);
+    expect(writeCounts).toEqual([4, 0, 0, 1]);
     expect(durableFeeSchedule).toEqual({
       schedule: {
         feeType: "quadratic",
@@ -259,6 +252,52 @@ describe("arbitrage Postgres persistence", () => {
       ],
     });
   });
+
+  it("persists generic portfolio-leg history without pair-only placeholders", async () => {
+    let history: Awaited<
+      ReturnType<OpportunityRepository["getOpportunityHistory"]>
+    >;
+    try {
+      await resources.database.transaction(async (transaction) => {
+        await transaction.delete(arbitrageOpportunities);
+        await transaction.delete(arbitrageOpportunityHistory);
+        const repository = new OpportunityRepository(
+          transaction as unknown as FinePredictDatabase,
+        );
+        const opportunity = portfolioOpportunityFixture();
+        await repository.saveScan(
+          scanResult("portfolio-history", [opportunity]),
+        );
+        history = await repository.getOpportunityHistory(
+          opportunity.opportunityId,
+        );
+        throw rollbackMarker;
+      });
+    } catch (error) {
+      if (error !== rollbackMarker) {
+        throw error;
+      }
+    }
+
+    expect(history?.points[0]).toMatchObject({
+      opportunityId: "portfolio-integration",
+      legs: [
+        {
+          venue: "polymarket",
+          marketId: "P-A",
+          side: "no",
+          averagePriceDollars: 0.61,
+        },
+        {
+          venue: "kalshi",
+          marketId: "K-B",
+          side: "no",
+          averagePriceDollars: 0.31,
+        },
+      ],
+    });
+    expect(history?.points[0]?.buyYesVenue).toBeUndefined();
+  });
 });
 
 /**
@@ -379,5 +418,60 @@ function opportunityFixture(): ScannedOpportunity {
     observedAtIso: "2026-07-24T00:00:00.000Z",
     similarityPercent100: 100,
     matchReasons: ["Exact fixture"],
+  };
+}
+
+/**
+ * Creates one routed mutex portfolio fixture.
+ *
+ * @returns Complete portfolio scanner record.
+ */
+function portfolioOpportunityFixture(): ScannedOpportunity {
+  const polymarket = market("polymarket", "P-A");
+  const kalshi = market("kalshi", "K-B");
+  return {
+    opportunityId: "portfolio-integration",
+    strategy: "routed_multi_outcome",
+    status: "review_required",
+    title: "Two-outcome routed pool",
+    category: "test",
+    matchConfidence: "possible",
+    relationship: "unreviewed",
+    settlementRisks: ["Cross-venue equivalence is unreviewed."],
+    proofKind: "mutually_exclusive_pool",
+    proofSummary: "At most one outcome settles Yes.",
+    proofVersion: "test",
+    legs: [
+      {
+        market: polymarket,
+        side: "no",
+        outcomeKey: "a",
+        shares: 10,
+        averagePriceDollars: 0.61,
+        feeDollars: 0,
+      },
+      {
+        market: kalshi,
+        side: "no",
+        outcomeKey: "b",
+        shares: 10,
+        averagePriceDollars: 0.31,
+        feeDollars: 0.1,
+      },
+    ],
+    executableShares: 10,
+    minimumPayoutDollarsPerShare: 1,
+    grossCostDollars: 9.2,
+    feesDollars: 0.1,
+    grossProfitDollars: 0.8,
+    netProfitDollars: 0.7,
+    conditionalNetProfitDollars: 0.7,
+    worstCaseSettlementDivergenceLossDollars: 9.3,
+    breakEvenAdverseDivergenceProbabilityPercent100: 7,
+    netEdgeDollarsPerShare: 0.07,
+    roiPercent100: 7.53,
+    observedAtIso: "2026-07-24T02:00:00.000Z",
+    similarityPercent100: 100,
+    matchReasons: ["Exact outcomes"],
   };
 }

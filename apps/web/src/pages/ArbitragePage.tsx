@@ -2,6 +2,7 @@ import type {
   ArbitrageOpportunity,
   ArbitrageOpportunityHistoryResponse,
   ArbitrageRelationship,
+  ArbitrageStrategy,
   ArbitrageServiceStatus,
   ArbitrageSummary,
 } from "@finepredict/shared";
@@ -42,12 +43,29 @@ const relationshipChoices: readonly {
   { label: "Unreviewed", value: "unreviewed" },
 ];
 
+/** Implemented strategy filter choices. */
+const strategyChoices: readonly {
+  label: string;
+  value: ArbitrageStrategy;
+}[] = [
+  { label: "Equivalent contracts", value: "cross_venue_equivalent" },
+  { label: "Routed outcome pools", value: "routed_multi_outcome" },
+  {
+    label: "Threshold / deadline",
+    value: "threshold_deadline_dominance",
+  },
+  { label: "Compound bounds", value: "compound_upper_bound" },
+];
+
 /** Public read-only cross-venue opportunity dashboard. */
 export function ArbitragePage() {
   const [minimumNetEdgeCents, setMinimumNetEdgeCents] = useState(3);
   const [relationship, setRelationship] = useState<
     ArbitrageRelationship | undefined
   >(undefined);
+  const [strategy, setStrategy] = useState<ArbitrageStrategy | undefined>(
+    undefined,
+  );
   const [category, setCategory] = useState("");
   const [reviewedOnly, setReviewedOnly] = useState(true);
   const [opportunities, setOpportunities] = useState<
@@ -61,6 +79,7 @@ export function ArbitragePage() {
   const [failure, setFailure] = useState<string | null>(null);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const reloadTimer = useRef<number | undefined>(undefined);
+  const streamConnected = useRef(false);
 
   /**
    * Loads the four bounded dashboard resources in parallel.
@@ -76,6 +95,7 @@ export function ArbitragePage() {
             minimumNetEdgeCents,
             ...(relationship ? { relationship } : {}),
             ...(category ? { category } : {}),
+            ...(strategy ? { strategy } : {}),
             reviewedOnly,
           }),
           getArbitrageSummary(),
@@ -97,7 +117,7 @@ export function ArbitragePage() {
     } finally {
       setLoading(false);
     }
-  }, [category, minimumNetEdgeCents, relationship, reviewedOnly]);
+  }, [category, minimumNetEdgeCents, relationship, reviewedOnly, strategy]);
 
   useEffect(() => {
     void loadDashboard();
@@ -120,12 +140,18 @@ export function ArbitragePage() {
     };
     const unsubscribe = subscribeToArbitrageUpdates(
       scheduleReload,
-      setConnected,
+      (isConnected) => {
+        streamConnected.current = isConnected;
+        setConnected(isConnected);
+      },
     );
     const fallbackInterval = window.setInterval(() => {
-      void loadDashboard();
+      if (!streamConnected.current) {
+        void loadDashboard();
+      }
     }, 30_000);
     return () => {
+      streamConnected.current = false;
       unsubscribe();
       window.clearInterval(fallbackInterval);
       if (reloadTimer.current !== undefined) {
@@ -224,6 +250,25 @@ export function ArbitragePage() {
         </div>
 
         <div className="arbitrage-filters" aria-label="Opportunity filters">
+          <label>
+            <span>Strategy</span>
+            <select
+              value={strategy ?? ""}
+              onChange={(event) =>
+                setStrategy(
+                  (event.target.value || undefined) as
+                    ArbitrageStrategy | undefined,
+                )
+              }
+            >
+              <option value="">All strategies</option>
+              {strategyChoices.map((choice) => (
+                <option key={choice.value} value={choice.value}>
+                  {choice.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label>
             <span>Minimum net edge</span>
             <select
@@ -479,6 +524,10 @@ function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const title = getOpportunityTitle(opportunity);
   const expiryAtIso = getNearestExpiryIso(opportunity);
+  const portfolioMarkets =
+    opportunity.strategy === "cross_venue_equivalent"
+      ? [opportunity.kalshi, opportunity.polymarket]
+      : opportunity.legs.map((leg) => leg.market);
 
   useEffect(
     () => () => {
@@ -576,31 +625,25 @@ function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
             {formatRelationship(opportunity.relationship)}
           </span>
           <strong className="arbitrage-contract-title">{title}</strong>
+          <span className="arbitrage-subvalue">
+            {formatStrategy(opportunity.strategy)}
+          </span>
           <div className="arbitrage-contract-links">
-            <a
-              href={opportunity.kalshi.marketUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Kalshi ↗
-            </a>
-            <a
-              href={opportunity.polymarket.marketUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Polymarket ↗
-            </a>
-            {opportunity.kalshi.settlementRulesUrl ? (
+            {portfolioMarkets.map((market, index) => (
               <a
-                href={opportunity.kalshi.settlementRulesUrl}
+                key={`${market.venue}:${market.marketId}`}
+                href={market.marketUrl}
                 target="_blank"
                 rel="noreferrer"
               >
-                Rules ↗
+                {formatVenue(market.venue)}
+                {portfolioMarkets.length > 2 ? ` ${index + 1}` : ""} ↗
               </a>
-            ) : null}
+            ))}
           </div>
+          {opportunity.strategy !== "cross_venue_equivalent" ? (
+            <span className="arbitrage-risk">{opportunity.proofSummary}</span>
+          ) : null}
           {opportunity.settlementRisks[0] ? (
             <span className="arbitrage-risk">
               Basis risk: {opportunity.settlementRisks[0]}
@@ -616,24 +659,26 @@ function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
               <Clock3 size={13} aria-hidden="true" />
               {historyOpen ? "Hide history" : "History"}
             </button>
-            <button
-              className={`secondary-button arbitrage-compare-button${comparing ? " is-comparing" : ""}`}
-              type="button"
-              disabled={comparing}
-              aria-busy={comparing}
-              onClick={() => void compareContracts()}
-            >
-              {comparing ? (
-                <LoaderCircle size={13} aria-hidden="true" />
-              ) : (
-                <GitCompareArrows size={13} aria-hidden="true" />
-              )}
-              {comparing
-                ? "Comparing…"
-                : savedComparisonSlug
-                  ? "Open comparison"
-                  : "Compare"}
-            </button>
+            {opportunity.strategy === "cross_venue_equivalent" ? (
+              <button
+                className={`secondary-button arbitrage-compare-button${comparing ? " is-comparing" : ""}`}
+                type="button"
+                disabled={comparing}
+                aria-busy={comparing}
+                onClick={() => void compareContracts()}
+              >
+                {comparing ? (
+                  <LoaderCircle size={13} aria-hidden="true" />
+                ) : (
+                  <GitCompareArrows size={13} aria-hidden="true" />
+                )}
+                {comparing
+                  ? "Comparing…"
+                  : savedComparisonSlug
+                    ? "Open comparison"
+                    : "Compare"}
+              </button>
+            ) : null}
             {comparisonStatus ? (
               <span
                 className={
@@ -649,14 +694,29 @@ function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
           </div>
         </td>
         <td>
-          <span className="arbitrage-trade-leg">
-            YES {formatCents(opportunity.buyYesAveragePriceDollars)}{" "}
-            <em>{formatVenue(opportunity.direction.buyYesVenue)}</em>
-          </span>
-          <span className="arbitrage-trade-leg">
-            NO {formatCents(opportunity.buyNoAveragePriceDollars)}{" "}
-            <em>{formatVenue(opportunity.direction.buyNoVenue)}</em>
-          </span>
+          {opportunity.strategy === "cross_venue_equivalent" ? (
+            <>
+              <span className="arbitrage-trade-leg">
+                YES {formatCents(opportunity.buyYesAveragePriceDollars)}{" "}
+                <em>{formatVenue(opportunity.direction.buyYesVenue)}</em>
+              </span>
+              <span className="arbitrage-trade-leg">
+                NO {formatCents(opportunity.buyNoAveragePriceDollars)}{" "}
+                <em>{formatVenue(opportunity.direction.buyNoVenue)}</em>
+              </span>
+            </>
+          ) : (
+            opportunity.legs.map((leg) => (
+              <span
+                className="arbitrage-trade-leg"
+                key={`${leg.market.venue}:${leg.market.marketId}:${leg.side}`}
+              >
+                {leg.side.toLocaleUpperCase("en-US")}{" "}
+                {formatCents(leg.averagePriceDollars)}{" "}
+                <em>{formatVenue(leg.market.venue)}</em>
+              </span>
+            ))
+          )}
         </td>
         <NumberCell
           value={formatCents(opportunity.grossEdgeDollarsPerShare)}
@@ -739,6 +799,11 @@ function OpportunityHistoryChart({
     : detectionMs;
   const latestMs = Date.parse(points.at(-1)!.observedAtIso);
   const timeDomain = getHistoryTimeDomain(originMs, latestMs);
+  const hasLegacyPrices = points.every(
+    (point) =>
+      point.buyYesAveragePriceDollars !== undefined &&
+      point.buyNoAveragePriceDollars !== undefined,
+  );
   const priceDomain = getHistoryPriceDomain(points);
   const spreadDomain = getHistorySpreadDomain(points);
   return (
@@ -753,19 +818,25 @@ function OpportunityHistoryChart({
         </span>
       </div>
       <p className="arbitrage-history-intro">
-        Prices are the executable YES and NO legs used by the scanner. Spread is
-        shown before and after modeled fees; origin and first detection are
-        marked when timestamps are available.
+        {hasLegacyPrices
+          ? "Prices are the executable YES and NO legs used by the scanner. "
+          : "The portfolio spread is shown across its complete set of legs. "}
+        Spread is shown before and after modeled fees; origin and first
+        detection are marked when timestamps are available.
       </p>
       <div className="arbitrage-history-legend" aria-hidden="true">
-        <span>
-          <i className="yes" />
-          YES price
-        </span>
-        <span>
-          <i className="no" />
-          NO price
-        </span>
+        {hasLegacyPrices ? (
+          <>
+            <span>
+              <i className="yes" />
+              YES price
+            </span>
+            <span>
+              <i className="no" />
+              NO price
+            </span>
+          </>
+        ) : null}
         <span>
           <i className="gross" />
           Gross spread
@@ -786,30 +857,34 @@ function OpportunityHistoryChart({
         {originMs < detectionMs
           ? renderHistoryMarker("detected", detectionMs, timeDomain, dimensions)
           : null}
-        <path
-          className="yes"
-          d={createHistoryPath(
-            points,
-            dimensions,
-            timeDomain,
-            priceDomain,
-            (point) => point.buyYesAveragePriceDollars * 100,
-            12,
-            156,
-          )}
-        />
-        <path
-          className="no"
-          d={createHistoryPath(
-            points,
-            dimensions,
-            timeDomain,
-            priceDomain,
-            (point) => point.buyNoAveragePriceDollars * 100,
-            12,
-            156,
-          )}
-        />
+        {hasLegacyPrices ? (
+          <>
+            <path
+              className="yes"
+              d={createHistoryPath(
+                points,
+                dimensions,
+                timeDomain,
+                priceDomain,
+                (point) => (point.buyYesAveragePriceDollars ?? 0) * 100,
+                12,
+                156,
+              )}
+            />
+            <path
+              className="no"
+              d={createHistoryPath(
+                points,
+                dimensions,
+                timeDomain,
+                priceDomain,
+                (point) => (point.buyNoAveragePriceDollars ?? 0) * 100,
+                12,
+                156,
+              )}
+            />
+          </>
+        ) : null}
         <path
           className="gross"
           d={createHistoryPath(
@@ -957,14 +1032,19 @@ function getHistoryTimeDomain(minimum: number, maximum: number) {
 function getHistoryPriceDomain(
   points: ArbitrageOpportunityHistoryResponse["points"],
 ) {
-  return getPaddedHistoryDomain(
-    points.flatMap((point) => [
-      point.buyYesAveragePriceDollars * 100,
-      point.buyNoAveragePriceDollars * 100,
-    ]),
-    0,
-    100,
+  const values = points.flatMap((point) =>
+    point.buyYesAveragePriceDollars !== undefined &&
+    point.buyNoAveragePriceDollars !== undefined
+      ? [
+          point.buyYesAveragePriceDollars * 100,
+          point.buyNoAveragePriceDollars * 100,
+        ]
+      : [],
   );
+  if (values.length === 0) {
+    return { minimum: 0, maximum: 100 };
+  }
+  return getPaddedHistoryDomain(values, 0, 100);
 }
 
 /**
@@ -1169,10 +1249,13 @@ function getSortValue(
     case "contracts":
       return getOpportunityTitle(opportunity).toLocaleLowerCase("en-US");
     case "trade":
-      return (
-        opportunity.buyYesAveragePriceDollars +
-        opportunity.buyNoAveragePriceDollars
-      );
+      return opportunity.strategy === "cross_venue_equivalent"
+        ? opportunity.buyYesAveragePriceDollars +
+            opportunity.buyNoAveragePriceDollars
+        : opportunity.legs.reduce(
+            (total, leg) => total + leg.averagePriceDollars,
+            0,
+          );
     case "gross":
       return opportunity.grossEdgeDollarsPerShare;
     case "fees":
@@ -1197,6 +1280,9 @@ function getSortValue(
  * @returns Outcome label or Kalshi proposition.
  */
 function getOpportunityTitle(opportunity: ArbitrageOpportunity): string {
+  if (opportunity.strategy !== "cross_venue_equivalent") {
+    return opportunity.title;
+  }
   return (
     opportunity.kalshi.outcomeLabel ??
     opportunity.polymarket.outcomeLabel ??
@@ -1214,8 +1300,9 @@ function getNearestExpiryIso(
   opportunity: ArbitrageOpportunity,
 ): string | undefined {
   const expiries = [
-    opportunity.kalshi.endDateIso,
-    opportunity.polymarket.endDateIso,
+    ...(opportunity.strategy === "cross_venue_equivalent"
+      ? [opportunity.kalshi.endDateIso, opportunity.polymarket.endDateIso]
+      : opportunity.legs.map((leg) => leg.market.endDateIso)),
   ].filter(
     (value): value is string =>
       value !== undefined && Number.isFinite(Date.parse(value)),
@@ -1223,6 +1310,19 @@ function getNearestExpiryIso(
   return expiries.sort(
     (left, right) => Date.parse(left) - Date.parse(right),
   )[0];
+}
+
+/**
+ * Formats an implemented strategy for the table.
+ *
+ * @param strategy - Stable strategy identifier.
+ * @returns Reader-facing strategy label.
+ */
+function formatStrategy(strategy: ArbitrageStrategy): string {
+  return (
+    strategyChoices.find((choice) => choice.value === strategy)?.label ??
+    strategy
+  );
 }
 
 /**

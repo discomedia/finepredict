@@ -48,7 +48,9 @@ export async function createArbitrageRuntime(
   const repository = new OpportunityRepository(database);
   const kalshiRequestScheduler = new KalshiRequestScheduler();
   const scanner = new OpportunityScanner({
-    catalogClient: new NativeCatalogClient(),
+    catalogClient: new NativeCatalogClient({
+      kalshiRequestScheduler,
+    }),
     repository,
     directMarketDataClient: new DirectMarketDataClient({
       kalshiRequestScheduler,

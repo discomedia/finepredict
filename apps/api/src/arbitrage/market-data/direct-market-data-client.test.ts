@@ -220,4 +220,41 @@ describe("direct venue market data", () => {
     expect(batch.requestCount).toBe(3);
     expect(client.requestCount).toBe(3);
   });
+
+  it("deduplicates a scan-wide union shared by multiple detectors", async () => {
+    const client = new DirectMarketDataClient({
+      kalshiBaseUrl: baseUrl,
+      polymarketBaseUrl: baseUrl,
+    });
+    const polymarketDetails = {
+      conditionId: "0xabc",
+      yesTokenId: "yes-token",
+      noTokenId: "no-token",
+      description: "Fixture",
+      tags: [],
+      minimumOrderSizeShares: 5,
+    };
+
+    const batch = await client.getMarketSnapshots(
+      [
+        { venue: "kalshi", marketId: "KXTEST" },
+        { venue: "kalshi", marketId: "KXTEST" },
+        {
+          venue: "polymarket",
+          marketId: "0xabc",
+          polymarketDetails,
+        },
+        {
+          venue: "polymarket",
+          marketId: "0xabc",
+          polymarketDetails,
+        },
+      ],
+      2,
+    );
+
+    expect(batch.snapshotsByMarketKey.size).toBe(2);
+    expect(batch.errorsByMarketKey.size).toBe(0);
+    expect(batch.requestCount).toBe(2);
+  });
 });

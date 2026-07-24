@@ -558,6 +558,17 @@ export const ArbitrageRelationshipSchema = z.enum([
 /** Settlement relationship shown by the arbitrage scanner. */
 export type ArbitrageRelationship = z.infer<typeof ArbitrageRelationshipSchema>;
 
+/** Implemented deterministic arbitrage strategy. */
+export const ArbitrageStrategySchema = z.enum([
+  "cross_venue_equivalent",
+  "routed_multi_outcome",
+  "threshold_deadline_dominance",
+  "compound_upper_bound",
+]);
+
+/** Implemented deterministic arbitrage strategy. */
+export type ArbitrageStrategy = z.infer<typeof ArbitrageStrategySchema>;
+
 /** Publication state assigned to one post-fee opportunity. */
 export const ArbitrageOpportunityStatusSchema = z.enum([
   "actionable",
@@ -585,7 +596,7 @@ export const ArbitrageMarketSchema = z.object({
 });
 
 /** Current depth- and fee-aware cross-venue opportunity. */
-export const ArbitrageOpportunitySchema = z.object({
+const CrossVenueArbitrageOpportunitySchema = z.object({
   opportunityId: z.string().min(1),
   strategy: z.literal("cross_venue_equivalent"),
   status: ArbitrageOpportunityStatusSchema,
@@ -620,6 +631,64 @@ export const ArbitrageOpportunitySchema = z.object({
   similarityPercent100: z.number().min(0).max(100),
 });
 
+/** One filled market side in a guaranteed-payoff portfolio. */
+export const ArbitragePortfolioLegSchema = z.object({
+  market: ArbitrageMarketSchema,
+  side: z.enum(["yes", "no"]),
+  outcomeKey: z.string().min(1),
+  shares: z.number().positive(),
+  averagePriceDollars: z.number().min(0).max(1),
+  feeDollars: z.number().nonnegative(),
+});
+
+/** Current depth- and fee-aware deterministic portfolio opportunity. */
+const PortfolioArbitrageOpportunitySchema = z.object({
+  opportunityId: z.string().min(1),
+  strategy: z.enum([
+    "routed_multi_outcome",
+    "threshold_deadline_dominance",
+    "compound_upper_bound",
+  ]),
+  status: ArbitrageOpportunityStatusSchema,
+  title: z.string().min(1),
+  category: z.string().min(1),
+  matchConfidence: z.enum(["verified", "probable", "possible"]),
+  relationship: ArbitrageRelationshipSchema,
+  settlementRisks: z.array(z.string().min(1)),
+  proofKind: z.enum([
+    "mutually_exclusive_pool",
+    "threshold_implication",
+    "deadline_implication",
+    "compound_implies_component",
+  ]),
+  proofSummary: z.string().min(1),
+  legs: z.array(ArbitragePortfolioLegSchema).min(2),
+  executableShares: z.number().positive(),
+  minimumPayoutDollarsPerShare: z.number().positive(),
+  grossEdgeDollarsPerShare: z.number(),
+  feeDollarsPerShare: z.number().nonnegative(),
+  grossProfitDollars: z.number(),
+  feesDollars: z.number().nonnegative(),
+  netProfitDollars: z.number(),
+  conditionalNetProfitDollars: z.number(),
+  worstCaseSettlementDivergenceLossDollars: z.number().nonnegative(),
+  breakEvenAdverseDivergenceProbabilityPercent100: z
+    .number()
+    .min(0)
+    .max(100)
+    .optional(),
+  netEdgeDollarsPerShare: z.number(),
+  roiPercent100: z.number(),
+  observedAtIso: z.string().datetime(),
+  similarityPercent100: z.number().min(0).max(100),
+});
+
+/** Any current opportunity returned to the dashboard. */
+export const ArbitrageOpportunitySchema = z.discriminatedUnion("strategy", [
+  CrossVenueArbitrageOpportunitySchema,
+  PortfolioArbitrageOpportunitySchema,
+]);
+
 /** One arbitrage opportunity returned to the React dashboard. */
 export type ArbitrageOpportunity = z.infer<typeof ArbitrageOpportunitySchema>;
 
@@ -627,10 +696,20 @@ export type ArbitrageOpportunity = z.infer<typeof ArbitrageOpportunitySchema>;
 export const ArbitrageOpportunityHistoryPointSchema = z.object({
   opportunityId: z.string().min(1),
   observedAtIso: z.string().datetime(),
-  buyYesVenue: MarketPlatformSchema,
-  buyNoVenue: MarketPlatformSchema,
-  buyYesAveragePriceDollars: z.number().min(0).max(1),
-  buyNoAveragePriceDollars: z.number().min(0).max(1),
+  buyYesVenue: MarketPlatformSchema.optional(),
+  buyNoVenue: MarketPlatformSchema.optional(),
+  buyYesAveragePriceDollars: z.number().min(0).max(1).optional(),
+  buyNoAveragePriceDollars: z.number().min(0).max(1).optional(),
+  legs: z
+    .array(
+      z.object({
+        venue: MarketPlatformSchema,
+        marketId: z.string().min(1),
+        side: z.enum(["yes", "no"]),
+        averagePriceDollars: z.number().min(0).max(1),
+      }),
+    )
+    .optional(),
   grossEdgeDollarsPerShare: z.number(),
   netEdgeDollarsPerShare: z.number(),
   roiPercent100: z.number(),
@@ -664,7 +743,7 @@ export type ArbitrageComparisonReportResponse = z.infer<
 /** Bounded public opportunity-list response. */
 export const ArbitrageOpportunityListResponseSchema = z.object({
   filters: z.object({
-    strategy: z.literal("cross_venue_equivalent").optional(),
+    strategy: ArbitrageStrategySchema.optional(),
     category: z.string().optional(),
     status: ArbitrageOpportunityStatusSchema.optional(),
     relationship: ArbitrageRelationshipSchema.optional(),

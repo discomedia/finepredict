@@ -1,11 +1,23 @@
 import type {
   ArbitrageDirection,
   MatchConfidence,
+  OutcomeSide,
   Venue,
 } from "../common/types.js";
 
 /** Implemented opportunity strategy identifiers exposed by the API. */
-export type OpportunityStrategy = "cross_venue_equivalent";
+export type OpportunityStrategy =
+  | "cross_venue_equivalent"
+  | "routed_multi_outcome"
+  | "threshold_deadline_dominance"
+  | "compound_upper_bound";
+
+/** Deterministic proof attached to a guaranteed-payoff portfolio. */
+export type PortfolioProofKind =
+  | "mutually_exclusive_pool"
+  | "threshold_implication"
+  | "deadline_implication"
+  | "compound_implies_component";
 
 /** Lifecycle state assigned to a scanned opportunity. */
 export type OpportunityStatus =
@@ -69,6 +81,14 @@ export interface NativeBinaryMarket {
   readonly liquidity: number;
   /** Venue source update timestamp. */
   readonly sourceUpdatedAtIso?: string;
+  /** Venue explicitly declares the parent outcomes mutually exclusive. */
+  readonly eventMutuallyExclusive?: boolean;
+  /** Kalshi collateral mode used to validate event-set mechanics. */
+  readonly collateralReturnType?: string;
+  /** Polymarket declares the parent event a negative-risk outcome set. */
+  readonly negativeRisk?: boolean;
+  /** Polymarket marks this as the augmented Other outcome. */
+  readonly negativeRiskOther?: boolean;
 }
 
 /** One deterministic equivalent-contract candidate before direct-book evaluation. */
@@ -94,11 +114,11 @@ export interface EquivalentContractCandidate {
 }
 
 /** Complete API-facing post-fee opportunity record. */
-export interface ScannedOpportunity {
+export interface CrossVenueScannedOpportunity {
   /** Stable pair identifier. */
   readonly opportunityId: string;
   /** Strategy that produced this record. */
-  readonly strategy: OpportunityStrategy;
+  readonly strategy: "cross_venue_equivalent";
   /** Current publication and review state. */
   readonly status: OpportunityStatus;
   /** Stable category used by API filters. */
@@ -147,6 +167,118 @@ export interface ScannedOpportunity {
   readonly matchReasons: readonly string[];
 }
 
+/** One market side required by a deterministic portfolio candidate. */
+export interface PortfolioCandidateLeg {
+  /** Native market whose outcome is purchased. */
+  readonly market: NativeBinaryMarket;
+  /** Purchased binary outcome. */
+  readonly side: OutcomeSide;
+  /** Canonical outcome key used to keep routed IDs stable. */
+  readonly outcomeKey: string;
+}
+
+/** Candidate emitted before any fresh book request is made. */
+export interface PortfolioCandidate {
+  /** Stable strategy/proof/market identifier. */
+  readonly opportunityId: string;
+  /** Producing deterministic strategy. */
+  readonly strategy: Exclude<OpportunityStrategy, "cross_venue_equivalent">;
+  /** Human-readable portfolio name. */
+  readonly title: string;
+  /** Category used by API filters. */
+  readonly category: string;
+  /** Proof that establishes the payout lower bound. */
+  readonly proofKind: PortfolioProofKind;
+  /** Concise deterministic proof explanation. */
+  readonly proofSummary: string;
+  /** Versioned proof implementation identifier. */
+  readonly proofVersion: string;
+  /** Ordered legs required at equal share size. */
+  readonly legs: readonly PortfolioCandidateLeg[];
+  /** Guaranteed minimum payout for one share on every leg. */
+  readonly minimumPayoutDollarsPerShare: number;
+  /** Cheap catalog edge used only for global shortlisting. */
+  readonly preliminaryGrossEdgeDollarsPerShare: number;
+  /** Settlement relationship across all legs. */
+  readonly relationship: OpportunityRelationship;
+  /** Known settlement divergences that can defeat a routed proof. */
+  readonly settlementRisks: readonly string[];
+  /** Deterministic matching evidence. */
+  readonly matchReasons: readonly string[];
+  /** Lexical/event alignment confidence on a scale of 100. */
+  readonly similarityPercent100: number;
+}
+
+/** One filled portfolio leg retained for display and price refresh. */
+export interface ScannedPortfolioLeg extends PortfolioCandidateLeg {
+  /** Equal shares acquired on this leg. */
+  readonly shares: number;
+  /** Average executable acquisition price. */
+  readonly averagePriceDollars: number;
+  /** Modeled venue fee for this leg. */
+  readonly feeDollars: number;
+}
+
+/** Complete API-facing guaranteed-payoff portfolio. */
+export interface PortfolioScannedOpportunity {
+  /** Stable strategy/proof/market identifier. */
+  readonly opportunityId: string;
+  /** Producing portfolio strategy. */
+  readonly strategy: Exclude<OpportunityStrategy, "cross_venue_equivalent">;
+  /** Publication status. */
+  readonly status: OpportunityStatus;
+  /** Human-readable portfolio name. */
+  readonly title: string;
+  /** Category used by API filters. */
+  readonly category: string;
+  /** Deterministic proof confidence. */
+  readonly matchConfidence: MatchConfidence;
+  /** Settlement relationship across all legs. */
+  readonly relationship: OpportunityRelationship;
+  /** Known settlement divergences that can defeat the payoff. */
+  readonly settlementRisks: readonly string[];
+  /** Proof family. */
+  readonly proofKind: PortfolioProofKind;
+  /** Human-readable proof. */
+  readonly proofSummary: string;
+  /** Versioned proof implementation identifier. */
+  readonly proofVersion: string;
+  /** Filled equal-share legs. */
+  readonly legs: readonly ScannedPortfolioLeg[];
+  /** Equal share count filled on every leg. */
+  readonly executableShares: number;
+  /** Guaranteed minimum payout per equal-share bundle. */
+  readonly minimumPayoutDollarsPerShare: number;
+  /** Gross acquisition cost across every leg. */
+  readonly grossCostDollars: number;
+  /** Modeled fees across every leg. */
+  readonly feesDollars: number;
+  /** Guaranteed gross profit before fees. */
+  readonly grossProfitDollars: number;
+  /** Guaranteed profit after modeled fees. */
+  readonly netProfitDollars: number;
+  /** Profit conditional on the proved settlement relationship. */
+  readonly conditionalNetProfitDollars: number;
+  /** Conservative loss if a cross-venue settlement relationship diverges. */
+  readonly worstCaseSettlementDivergenceLossDollars: number;
+  /** Divergence probability that reduces expected profit to zero. */
+  readonly breakEvenAdverseDivergenceProbabilityPercent100?: number;
+  /** Net profit per equal-share bundle. */
+  readonly netEdgeDollarsPerShare: number;
+  /** Net return on total cash outlay on a scale of 100. */
+  readonly roiPercent100: number;
+  /** Direct-book observation timestamp. */
+  readonly observedAtIso: string;
+  /** Deterministic lexical/event alignment score. */
+  readonly similarityPercent100: number;
+  /** Reasons supporting or limiting the proof. */
+  readonly matchReasons: readonly string[];
+}
+
+/** Any current arbitrage opportunity persisted by the scanner. */
+export type ScannedOpportunity =
+  CrossVenueScannedOpportunity | PortfolioScannedOpportunity;
+
 /** Compact venue leg returned by the opportunity-list endpoint. */
 export interface OpportunityListMarket {
   /** Venue on which the contract trades. */
@@ -178,7 +310,7 @@ export interface OpportunityListMarket {
 }
 
 /** Compact opportunity row returned by list queries; detail retains full rules. */
-export interface OpportunityListItem {
+export interface CrossVenueOpportunityListItem {
   /** Stable opportunity identifier. */
   readonly opportunityId: string;
   /** Producing strategy. */
@@ -231,6 +363,80 @@ export interface OpportunityListItem {
   readonly similarityPercent100: number;
 }
 
+/** Compact filled leg returned for a portfolio opportunity. */
+export interface OpportunityListPortfolioLeg {
+  /** Compact public market metadata. */
+  readonly market: OpportunityListMarket;
+  /** Purchased binary outcome. */
+  readonly side: OutcomeSide;
+  /** Canonical outcome identifier. */
+  readonly outcomeKey: string;
+  /** Equal shares acquired. */
+  readonly shares: number;
+  /** Average executable price. */
+  readonly averagePriceDollars: number;
+  /** Modeled fee at the displayed size. */
+  readonly feeDollars: number;
+}
+
+/** Compact multi-leg opportunity returned by the list endpoint. */
+export interface PortfolioOpportunityListItem {
+  /** Stable opportunity identifier. */
+  readonly opportunityId: string;
+  /** Producing portfolio strategy. */
+  readonly strategy: Exclude<OpportunityStrategy, "cross_venue_equivalent">;
+  /** Publication status. */
+  readonly status: OpportunityStatus;
+  /** Human-readable opportunity name. */
+  readonly title: string;
+  /** Stable API category. */
+  readonly category: string;
+  /** Deterministic proof confidence. */
+  readonly matchConfidence: MatchConfidence;
+  /** Settlement relationship across all legs. */
+  readonly relationship: OpportunityRelationship;
+  /** Known settlement risks. */
+  readonly settlementRisks: readonly string[];
+  /** Proof family. */
+  readonly proofKind: PortfolioProofKind;
+  /** Concise proof explanation. */
+  readonly proofSummary: string;
+  /** Filled portfolio legs. */
+  readonly legs: readonly OpportunityListPortfolioLeg[];
+  /** Equal shares acquired on every leg. */
+  readonly executableShares: number;
+  /** Guaranteed payout per equal-share bundle. */
+  readonly minimumPayoutDollarsPerShare: number;
+  /** Gross spread per bundle before fees. */
+  readonly grossEdgeDollarsPerShare: number;
+  /** Fees per bundle. */
+  readonly feeDollarsPerShare: number;
+  /** Gross profit at displayed depth. */
+  readonly grossProfitDollars: number;
+  /** Total modeled fees. */
+  readonly feesDollars: number;
+  /** Net profit at displayed depth. */
+  readonly netProfitDollars: number;
+  /** Conditional profit under the proved relationship. */
+  readonly conditionalNetProfitDollars: number;
+  /** Conservative settlement-divergence loss. */
+  readonly worstCaseSettlementDivergenceLossDollars: number;
+  /** Break-even adverse-divergence probability. */
+  readonly breakEvenAdverseDivergenceProbabilityPercent100?: number;
+  /** Net spread per bundle. */
+  readonly netEdgeDollarsPerShare: number;
+  /** Net return on cash outlay. */
+  readonly roiPercent100: number;
+  /** Direct-book observation timestamp. */
+  readonly observedAtIso: string;
+  /** Deterministic alignment score. */
+  readonly similarityPercent100: number;
+}
+
+/** Any compact opportunity returned by the list endpoint. */
+export type OpportunityListItem =
+  CrossVenueOpportunityListItem | PortfolioOpportunityListItem;
+
 /** One deduplicated hourly executable-price observation. */
 export interface OpportunityHistoryPoint {
   /** Stable pair identifier. */
@@ -238,13 +444,20 @@ export interface OpportunityHistoryPoint {
   /** Actual direct-book observation timestamp. */
   readonly observedAtIso: string;
   /** Venue where the observed YES leg was bought. */
-  readonly buyYesVenue: "kalshi" | "polymarket";
+  readonly buyYesVenue?: "kalshi" | "polymarket";
   /** Venue where the observed NO leg was bought. */
-  readonly buyNoVenue: "kalshi" | "polymarket";
+  readonly buyNoVenue?: "kalshi" | "polymarket";
   /** Average executable YES-leg price. */
-  readonly buyYesAveragePriceDollars: number;
+  readonly buyYesAveragePriceDollars?: number;
   /** Average executable NO-leg price. */
-  readonly buyNoAveragePriceDollars: number;
+  readonly buyNoAveragePriceDollars?: number;
+  /** Compact prices for every leg of a generic portfolio. */
+  readonly legs?: readonly {
+    readonly venue: Venue;
+    readonly marketId: string;
+    readonly side: OutcomeSide;
+    readonly averagePriceDollars: number;
+  }[];
   /** Gross spread per paired share before fees. */
   readonly grossEdgeDollarsPerShare: number;
   /** Post-fee spread per paired share. */

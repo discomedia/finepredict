@@ -2,7 +2,7 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
-import { createArbitrageRouter } from "./router.js";
+import { createArbitrageRouter, parseOpportunityFilters } from "./router.js";
 import type { ArbitrageRuntime } from "./runtime.js";
 import type { ScannedOpportunity } from "./opportunities/types.js";
 import type { ReportService } from "../report-service.js";
@@ -17,6 +17,17 @@ type ComparisonResolverFixture = (
 }>;
 
 describe("arbitrage API", () => {
+  it("accepts every implemented strategy as a database-level filter", () => {
+    expect(
+      parseOpportunityFilters(
+        new URLSearchParams("strategy=routed_multi_outcome"),
+      ),
+    ).toMatchObject({ strategy: "routed_multi_outcome" });
+    expect(() =>
+      parseOpportunityFilters(new URLSearchParams("strategy=split_merge")),
+    ).toThrow("Unsupported strategy split_merge.");
+  });
+
   it("returns compact reviewed post-fee opportunities", async () => {
     const app = express();
     app.use(

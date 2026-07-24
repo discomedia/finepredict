@@ -465,27 +465,30 @@ export const apiIdempotency = pgTable(
   ],
 );
 
-/** Current active Kalshi and Polymarket catalogs used by arbitrage discovery. */
+/** Compact active-market fingerprints used for catalog reconciliation. */
 export const arbitrageMarkets = pgTable(
   "arbitrage_markets",
   {
     venue: text("venue").notNull(),
     marketId: text("market_id").notNull(),
-    eventId: text("event_id").notNull(),
-    category: text("category").notNull(),
-    sourceUpdatedAt: timestamp("source_updated_at", { withTimezone: true }),
-    refreshedAt: timestamp("refreshed_at", { withTimezone: true }).notNull(),
     contentHash: text("content_hash").notNull(),
-    payload: jsonb("payload").notNull(),
   },
   (table) => [
     primaryKey({
       columns: [table.venue, table.marketId],
       name: "arbitrage_markets_primary",
     }),
-    index("arbitrage_markets_category_idx").on(table.category, table.venue),
   ],
 );
+
+/** Exact venue counts maintained alongside the compact market registry. */
+export const arbitrageCatalogCounts = pgTable("arbitrage_catalog_counts", {
+  venue: text("venue").primaryKey(),
+  marketCount: integer("market_count").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 /** Durable Kalshi series fees shared across API deployments and restarts. */
 export const arbitrageKalshiFeeSchedules = pgTable(
@@ -539,14 +542,11 @@ export const arbitrageOpportunityHistory = pgTable(
     opportunityId: text("opportunity_id").notNull(),
     bucketAt: timestamp("bucket_at", { withTimezone: true }).notNull(),
     observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
-    buyYesVenue: text("buy_yes_venue").notNull(),
-    buyNoVenue: text("buy_no_venue").notNull(),
-    buyYesAveragePriceDollars: doublePrecision(
-      "buy_yes_average_price_dollars",
-    ).notNull(),
-    buyNoAveragePriceDollars: doublePrecision(
-      "buy_no_average_price_dollars",
-    ).notNull(),
+    buyYesVenue: text("buy_yes_venue"),
+    buyNoVenue: text("buy_no_venue"),
+    buyYesAveragePriceDollars: doublePrecision("buy_yes_average_price_dollars"),
+    buyNoAveragePriceDollars: doublePrecision("buy_no_average_price_dollars"),
+    legs: jsonb("legs"),
     grossEdgeDollarsPerShare: doublePrecision(
       "gross_edge_dollars_per_share",
     ).notNull(),
@@ -621,6 +621,7 @@ export const arbitrageServiceLocks = pgTable("arbitrage_service_locks", {
 /** Database schema exported for Drizzle client construction. */
 export const databaseSchema = {
   alertEvents,
+  arbitrageCatalogCounts,
   arbitrageKalshiFeeSchedules,
   arbitrageMarkets,
   arbitrageOpportunities,

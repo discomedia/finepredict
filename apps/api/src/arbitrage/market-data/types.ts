@@ -4,6 +4,16 @@ import type {
   PolymarketMarketDetails,
 } from "../common/types.js";
 
+/** One venue-native market requested by the shared scan-wide book collector. */
+export interface DirectMarketRequest {
+  /** Venue whose public book is required. */
+  readonly venue: "kalshi" | "polymarket";
+  /** Venue-native market identifier. */
+  readonly marketId: string;
+  /** Polymarket token metadata when that venue is requested. */
+  readonly polymarketDetails?: PolymarketMarketDetails;
+}
+
 /** A normalized direct-venue snapshot for both sides of one reviewed market pair. */
 export interface DirectPairSnapshot {
   /** Pair whose venue-native books were read. */
