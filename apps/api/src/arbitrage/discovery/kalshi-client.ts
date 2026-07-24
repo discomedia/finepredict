@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { fetchJson } from "../common/http.js";
 import type { KalshiFeeSchedule } from "../common/types.js";
+import { KalshiRequestScheduler } from "./kalshi-request-scheduler.js";
 
 const seriesResponseSchema = z.object({
   series: z.object({
@@ -49,18 +49,31 @@ export interface KalshiMarketExecutionMetadata {
   readonly liquidity: number;
 }
 
+/** Public Kalshi metadata client configuration. */
+export interface KalshiClientOptions {
+  /** Production API base URL or a test override. */
+  readonly baseUrl?: string;
+  /** Shared scheduler coordinating all Kalshi request starts and retries. */
+  readonly requestScheduler?: KalshiRequestScheduler;
+}
+
 /** Read-only client for Kalshi public market metadata. */
 export class KalshiClient {
   private readonly baseUrl: string;
+  private readonly requestScheduler: KalshiRequestScheduler;
   private externalRequestCount = 0;
 
   /**
    * Creates a Kalshi metadata client.
    *
-   * @param baseUrl - Optional production API override used in tests.
+   * @param options - API base URL and shared Kalshi request scheduler.
    */
-  public constructor(baseUrl = "https://external-api.kalshi.com/trade-api/v2") {
+  public constructor(options: KalshiClientOptions = {}) {
+    const baseUrl =
+      options.baseUrl ?? "https://external-api.kalshi.com/trade-api/v2";
     this.baseUrl = `${baseUrl.replace(/\/$/u, "")}/`;
+    this.requestScheduler =
+      options.requestScheduler ?? new KalshiRequestScheduler();
   }
 
   /**
@@ -76,9 +89,10 @@ export class KalshiClient {
       `series/${encodeURIComponent(seriesTicker)}`,
       this.baseUrl,
     );
-    this.externalRequestCount += 1;
     const parsed = seriesResponseSchema.parse(
-      await fetchJson(url, undefined, "Kalshi API"),
+      await this.requestScheduler.requestJson(url, "Kalshi API", () => {
+        this.externalRequestCount += 1;
+      }),
     );
     return {
       feeType: parsed.series.fee_type,
@@ -103,17 +117,27 @@ export class KalshiClient {
       `markets/${encodeURIComponent(marketTicker)}`,
       this.baseUrl,
     );
-    this.externalRequestCount += 1;
     const market = marketResponseSchema.parse(
-      await fetchJson(marketUrl, undefined, "Kalshi market API"),
+      await this.requestScheduler.requestJson(
+        marketUrl,
+        "Kalshi market API",
+        () => {
+          this.externalRequestCount += 1;
+        },
+      ),
     ).market;
     const eventUrl = new URL(
       `events/${encodeURIComponent(market.event_ticker)}`,
       this.baseUrl,
     );
-    this.externalRequestCount += 1;
     const event = eventResponseSchema.parse(
-      await fetchJson(eventUrl, undefined, "Kalshi event API"),
+      await this.requestScheduler.requestJson(
+        eventUrl,
+        "Kalshi event API",
+        () => {
+          this.externalRequestCount += 1;
+        },
+      ),
     ).event;
     return {
       marketTicker: market.ticker,

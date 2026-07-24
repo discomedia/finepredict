@@ -7,8 +7,10 @@ import {
   desc,
   eq,
   gte,
+  gt,
   inArray,
   ne,
+  notInArray,
   or,
   sql,
   type SQL,
@@ -16,11 +18,13 @@ import {
 
 import type { FinePredictDatabase } from "../../database/client.js";
 import {
+  arbitrageKalshiFeeSchedules,
   arbitrageMarkets,
   arbitrageOpportunities,
   arbitrageScans,
   arbitrageServiceRuns,
 } from "../../database/schema.js";
+import type { KalshiFeeSchedule } from "../common/types.js";
 import type {
   NativeBinaryMarket,
   OpportunityListFilters,
@@ -63,6 +67,14 @@ export interface OpportunityPersistenceStats {
   readonly databaseWriteCount: number;
 }
 
+/** One unexpired Kalshi fee schedule loaded from durable storage. */
+export interface DurableKalshiFeeSchedule {
+  /** Current venue fee configuration. */
+  readonly schedule: KalshiFeeSchedule;
+  /** UTC cache-expiry timestamp. */
+  readonly expiresAtIso: string;
+}
+
 /** Maximum values placed in one Postgres insert statement. */
 const databaseBatchSize = 500;
 
@@ -91,13 +103,13 @@ export class OpportunityRepository {
       .select({
         venue: arbitrageMarkets.venue,
         marketId: arbitrageMarkets.marketId,
-        contentHash: arbitrageMarkets.contentHash,
+        payload: arbitrageMarkets.payload,
       })
       .from(arbitrageMarkets);
     const existingHashes = new Map(
       existingRows.map((row) => [
         `${row.venue}:${row.marketId}`,
-        row.contentHash,
+        createStableMarketHash(row.payload as NativeBinaryMarket),
       ]),
     );
     const uniqueMarkets = new Map(
@@ -107,11 +119,11 @@ export class OpportunityRepository {
       .map(([identity, market]) => ({
         identity,
         market,
-        payload: JSON.stringify(market),
+        contentHash: createStableMarketHash(market),
       }))
       .filter(
-        ({ identity, payload }) =>
-          existingHashes.get(identity) !== createContentHash(payload),
+        ({ identity, contentHash }) =>
+          existingHashes.get(identity) !== contentHash,
       );
     const staleRows = existingRows.filter(
       (row) => !uniqueMarkets.has(`${row.venue}:${row.marketId}`),
@@ -123,14 +135,14 @@ export class OpportunityRepository {
         await transaction
           .insert(arbitrageMarkets)
           .values(
-            batch.map(({ market, payload }) => ({
+            batch.map(({ market, contentHash }) => ({
               venue: market.venue,
               marketId: market.marketId,
               eventId: market.eventId,
               category: market.category,
               sourceUpdatedAt: parseOptionalDate(market.sourceUpdatedAtIso),
               refreshedAt,
-              contentHash: createContentHash(payload),
+              contentHash,
               payload: market,
             })),
           )
@@ -181,13 +193,98 @@ export class OpportunityRepository {
   }
 
   /**
-   * Atomically replaces current opportunity rows and records scan counters.
+   * Loads unexpired Kalshi fee schedules for the requested series.
+   *
+   * @param seriesTickers - Unique Kalshi series identifiers.
+   * @param nowIso - UTC timestamp used for expiry filtering.
+   * @returns Valid durable schedules keyed by series ticker.
+   */
+  public async getValidKalshiFeeSchedules(
+    seriesTickers: readonly string[],
+    nowIso: string,
+  ): Promise<ReadonlyMap<string, DurableKalshiFeeSchedule>> {
+    if (seriesTickers.length === 0) {
+      return new Map();
+    }
+    const rows = await this.database
+      .select({
+        seriesTicker: arbitrageKalshiFeeSchedules.seriesTicker,
+        expiresAt: arbitrageKalshiFeeSchedules.expiresAt,
+        payload: arbitrageKalshiFeeSchedules.payload,
+      })
+      .from(arbitrageKalshiFeeSchedules)
+      .where(
+        and(
+          inArray(arbitrageKalshiFeeSchedules.seriesTicker, seriesTickers),
+          gt(arbitrageKalshiFeeSchedules.expiresAt, new Date(nowIso)),
+        ),
+      );
+    return new Map(
+      rows.map((row) => [
+        row.seriesTicker,
+        {
+          schedule: row.payload as KalshiFeeSchedule,
+          expiresAtIso: row.expiresAt.toISOString(),
+        },
+      ]),
+    );
+  }
+
+  /**
+   * Upserts newly fetched Kalshi fee schedules with one shared expiry.
+   *
+   * @param schedules - Successfully fetched venue fee schedules.
+   * @param fetchedAtIso - UTC retrieval timestamp.
+   * @param expiresAtIso - UTC cache-expiry timestamp.
+   * @returns Exact number of durable rows written.
+   */
+  public async saveKalshiFeeSchedules(
+    schedules: readonly KalshiFeeSchedule[],
+    fetchedAtIso: string,
+    expiresAtIso: string,
+  ): Promise<number> {
+    if (schedules.length === 0) {
+      return 0;
+    }
+    let databaseWriteCount = 0;
+    for (const batch of chunk(schedules, databaseBatchSize)) {
+      const rows = await this.database
+        .insert(arbitrageKalshiFeeSchedules)
+        .values(
+          batch.map((schedule) => ({
+            seriesTicker: schedule.seriesTicker,
+            fetchedAt: new Date(fetchedAtIso),
+            expiresAt: new Date(expiresAtIso),
+            payload: schedule,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: arbitrageKalshiFeeSchedules.seriesTicker,
+          set: {
+            fetchedAt: sql`excluded.fetched_at`,
+            expiresAt: sql`excluded.expires_at`,
+            payload: sql`excluded.payload`,
+          },
+        })
+        .returning({
+          seriesTicker: arbitrageKalshiFeeSchedules.seriesTicker,
+        });
+      databaseWriteCount += rows.length;
+    }
+    return databaseWriteCount;
+  }
+
+  /**
+   * Atomically replaces current opportunity rows, retaining previously
+   * published rows whose fresh venue requests failed.
    *
    * @param result - Completed bounded scan.
+   * @param failedOpportunityIds - Candidate IDs whose existing rows must remain.
    * @returns Exact durable row-write counts.
    */
   public async saveScan(
     result: OpportunityScanResult,
+    failedOpportunityIds: ReadonlySet<string> = new Set(),
   ): Promise<OpportunityPersistenceStats> {
     return this.database.transaction(async (transaction) => {
       let changedOpportunityCount = 0;
@@ -208,9 +305,19 @@ export class OpportunityRepository {
           });
         changedOpportunityCount += rows.length;
       }
+      const deletionConditions: SQL[] = [
+        ne(arbitrageOpportunities.scanId, result.scanId),
+      ];
+      if (failedOpportunityIds.size > 0) {
+        deletionConditions.push(
+          notInArray(arbitrageOpportunities.opportunityId, [
+            ...failedOpportunityIds,
+          ]),
+        );
+      }
       const deleted = await transaction
         .delete(arbitrageOpportunities)
-        .where(ne(arbitrageOpportunities.scanId, result.scanId))
+        .where(and(...deletionConditions))
         .returning({ opportunityId: arbitrageOpportunities.opportunityId });
       const databaseWriteCount = changedOpportunityCount + deleted.length + 1;
       await transaction.insert(arbitrageScans).values({
@@ -502,6 +609,38 @@ export class OpportunityRepository {
  */
 function createContentHash(payload: string): string {
   return createHash("sha256").update(payload).digest("hex");
+}
+
+/**
+ * Hashes only catalog fields that affect identity, matching, fees, or
+ * settlement. Fast-moving top quotes and display counters remain in the
+ * in-memory discovery snapshot and do not force hourly database rewrites.
+ *
+ * @param market - Complete current venue market.
+ * @returns SHA-256 digest for stable matching content.
+ */
+function createStableMarketHash(market: NativeBinaryMarket): string {
+  return createContentHash(
+    JSON.stringify({
+      venue: market.venue,
+      marketId: market.marketId,
+      eventId: market.eventId,
+      eventTitle: market.eventTitle,
+      seriesId: market.seriesId,
+      question: market.question,
+      outcomeLabel: market.outcomeLabel,
+      description: market.description,
+      settlementRulesUrl: market.settlementRulesUrl,
+      category: market.category,
+      status: market.status,
+      endDateIso: market.endDateIso,
+      yesTokenId: market.yesTokenId,
+      noTokenId: market.noTokenId,
+      minimumOrderSizeShares: market.minimumOrderSizeShares,
+      polymarketFeeRate: market.polymarketFeeRate,
+      polymarketFeeExponent: market.polymarketFeeExponent,
+    }),
+  );
 }
 
 /**

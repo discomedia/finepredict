@@ -6,6 +6,7 @@ import type {
   BinaryOrderBookSnapshot,
   PolymarketMarketDetails,
 } from "../common/types.js";
+import { KalshiRequestScheduler } from "../discovery/kalshi-request-scheduler.js";
 import type {
   DirectPairContext,
   DirectPairSnapshot,
@@ -53,12 +54,15 @@ export interface DirectMarketDataClientOptions {
   readonly kalshiBaseUrl?: string;
   /** Polymarket CLOB API base URL. */
   readonly polymarketBaseUrl?: string;
+  /** Shared scheduler coordinating Kalshi request starts and retries. */
+  readonly kalshiRequestScheduler?: KalshiRequestScheduler;
 }
 
 /** Direct read-only REST client used as the paper engine's price source. */
 export class DirectMarketDataClient implements PairMarketDataSource {
   private readonly kalshiBaseUrl: string;
   private readonly polymarketBaseUrl: string;
+  private readonly kalshiRequestScheduler: KalshiRequestScheduler;
   private externalRequestCount = 0;
 
   /**
@@ -71,6 +75,8 @@ export class DirectMarketDataClient implements PairMarketDataSource {
       options.kalshiBaseUrl ?? "https://external-api.kalshi.com/trade-api/v2";
     this.polymarketBaseUrl =
       options.polymarketBaseUrl ?? "https://clob.polymarket.com";
+    this.kalshiRequestScheduler =
+      options.kalshiRequestScheduler ?? new KalshiRequestScheduler();
   }
 
   /**
@@ -230,9 +236,14 @@ export class DirectMarketDataClient implements PairMarketDataSource {
       this.kalshiBaseUrl,
     );
     url.searchParams.set("depth", "0");
-    this.externalRequestCount += 1;
     const parsed = kalshiOrderBookSchema.parse(
-      await fetchJson(url, undefined, "Kalshi orderbook API"),
+      await this.kalshiRequestScheduler.requestJson(
+        url,
+        "Kalshi orderbook API",
+        () => {
+          this.externalRequestCount += 1;
+        },
+      ),
     );
     return {
       marketId: marketTicker,

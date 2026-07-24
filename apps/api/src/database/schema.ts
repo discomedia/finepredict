@@ -483,6 +483,20 @@ export const arbitrageMarkets = pgTable(
   ],
 );
 
+/** Durable Kalshi series fees shared across API deployments and restarts. */
+export const arbitrageKalshiFeeSchedules = pgTable(
+  "arbitrage_kalshi_fee_schedules",
+  {
+    seriesTicker: text("series_ticker").primaryKey(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    payload: jsonb("payload").notNull(),
+  },
+  (table) => [
+    index("arbitrage_kalshi_fee_schedules_expiry_idx").on(table.expiresAt),
+  ],
+);
+
 /** Current post-fee opportunities produced by the bounded scanner. */
 export const arbitrageOpportunities = pgTable(
   "arbitrage_opportunities",
@@ -555,6 +569,7 @@ export const arbitrageServiceRuns = pgTable(
 /** Database schema exported for Drizzle client construction. */
 export const databaseSchema = {
   alertEvents,
+  arbitrageKalshiFeeSchedules,
   arbitrageMarkets,
   arbitrageOpportunities,
   arbitrageScans,

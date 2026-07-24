@@ -48,6 +48,10 @@ It refreshes the strongest 24 persisted pairs every five minutes. Executable
 order-book asks, venue fees, gross edge, net edge, depth, and projected profit
 are stored in Postgres and streamed to the page. The scanner does not use an
 LLM, place trades, or treat a merely correlated market as risk-free arbitrage.
+All Kalshi reads share a 200 ms request-start pace with bounded exponential
+backoff. Series fee schedules are cached in Postgres for 24 hours so a new
+deployment can reuse them, and a temporary venue failure retains the pair's
+last successful observation instead of removing it.
 
 ## Local development
 
@@ -149,8 +153,9 @@ pnpm build
 
 The database-backed integration suite always uses the root `DATABASE_URL`. It
 applies pending migrations, creates uniquely identified temporary product and
-monitoring rows, verifies arbitrage catalog write suppression, and removes those
-rows before closing its database connections.
+monitoring rows, verifies arbitrage catalog write suppression, durable Kalshi
+fee caching, and failed-opportunity retention, and removes those rows before
+closing its database connections.
 The command fails instead of silently skipping when `DATABASE_URL` is absent.
 
 To verify upstream APIs and the OpenAI path with real credentials, run the API and submit a current market URL:
@@ -219,10 +224,11 @@ alter, or drop the managed table. The checked-in migrations include product
 subscriptions, watchlists, immutable observations/snapshots, alerts, dispute
 history, API keys, account-wide free minute windows, daily usage, and Stripe
 webhook idempotency. The arbitrage tables retain normalized public venue
-catalogs, executable opportunities, scan metrics, and service runs. Unchanged
-catalog rows are hash-compared and are not rewritten. Apply migrations to the
-intended database after enabling Neon Auth and before enabling billing or
-monitoring.
+catalogs, durable Kalshi fee schedules, executable opportunities, scan metrics,
+and service runs. Catalog identity and matching fields are hash-compared;
+fast-moving quotes, volume, liquidity, and source timestamps do not force
+hourly row rewrites. Apply migrations to the intended database after enabling
+Neon Auth and before enabling billing or monitoring.
 
 ## Monitoring
 

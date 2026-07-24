@@ -50,6 +50,13 @@
       "when": 1784857568821,
       "tag": "0006_chubby_shard",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784861976319,
+      "tag": "0007_greedy_cargill",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,7 @@ import type { AppConfig } from "../config.js";
 import type { FinePredictDatabase } from "../database/client.js";
 import type { PairOverride } from "./common/types.js";
 import { KalshiClient } from "./discovery/kalshi-client.js";
+import { KalshiRequestScheduler } from "./discovery/kalshi-request-scheduler.js";
 import { DirectMarketDataClient } from "./market-data/direct-market-data-client.js";
 import { NativeCatalogClient } from "./opportunities/native-catalog-client.js";
 import { OpportunityRepository } from "./opportunities/opportunity-repository.js";
@@ -45,11 +46,16 @@ export async function createArbitrageRuntime(
   database: FinePredictDatabase,
 ): Promise<ArbitrageRuntime> {
   const repository = new OpportunityRepository(database);
+  const kalshiRequestScheduler = new KalshiRequestScheduler();
   const scanner = new OpportunityScanner({
     catalogClient: new NativeCatalogClient(),
     repository,
-    directMarketDataClient: new DirectMarketDataClient(),
-    kalshiClient: new KalshiClient(),
+    directMarketDataClient: new DirectMarketDataClient({
+      kalshiRequestScheduler,
+    }),
+    kalshiClient: new KalshiClient({
+      requestScheduler: kalshiRequestScheduler,
+    }),
     pairOverrides: await loadPairOverrides(),
   });
   return {

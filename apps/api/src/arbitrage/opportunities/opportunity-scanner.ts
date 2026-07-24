@@ -45,6 +45,18 @@ interface CandidateEvaluationBatch {
   readonly failedCandidateIds: ReadonlySet<string>;
   /** Public HTTP requests consumed by books and fee schedules. */
   readonly externalRequestCount: number;
+  /** Durable fee-cache rows written during candidate evaluation. */
+  readonly databaseWriteCount: number;
+}
+
+/** Fee schedules and failures resolved from memory, Postgres, or Kalshi. */
+interface FeeScheduleBatch {
+  /** Current schedules keyed by Kalshi series ticker. */
+  readonly schedulesBySeries: ReadonlyMap<string, KalshiFeeSchedule>;
+  /** Retrieval errors keyed by Kalshi series ticker. */
+  readonly errorsBySeries: ReadonlyMap<string, string>;
+  /** Durable cache rows written after successful Kalshi requests. */
+  readonly databaseWriteCount: number;
 }
 
 /** Dependencies accepted by the native opportunity scanner. */
@@ -85,6 +97,7 @@ export class OpportunityScanner {
       readonly expiresAtMs: number;
     }
   >();
+  private pendingCatalog: readonly NativeBinaryMarket[] | undefined;
 
   /**
    * Creates a native opportunity scanner.
@@ -113,6 +126,7 @@ export class OpportunityScanner {
     readonly databaseWriteCount: number;
   }> {
     const result = await this.catalogClient.refresh();
+    this.pendingCatalog = result.markets;
     const refreshedAtIso = new Date().toISOString();
     const persistence = await this.repository.saveCatalog(
       result.markets,
@@ -145,7 +159,9 @@ export class OpportunityScanner {
       .toISOString()
       .replaceAll(":", "-")
       .replace(".", "-");
-    const markets = await this.repository.loadCatalog();
+    const markets =
+      this.pendingCatalog ?? (await this.repository.loadCatalog());
+    this.pendingCatalog = undefined;
     const matching = await matchEquivalentContracts(markets, {
       minimumSimilarityPercent100: options.minimumSimilarityPercent100,
       minimumPreliminaryGrossEdgeDollarsPerShare:
@@ -169,13 +185,17 @@ export class OpportunityScanner {
       freshBookCandidateCount: matching.candidates.length,
       failedCandidateCount: evaluation.failedCandidateIds.size,
       externalRequestCount: evaluation.externalRequestCount,
-      databaseWriteCount: 0,
+      databaseWriteCount: evaluation.databaseWriteCount,
       opportunities,
     };
-    const persistence = await this.repository.saveScan(resultBeforePersistence);
+    const persistence = await this.repository.saveScan(
+      resultBeforePersistence,
+      evaluation.failedCandidateIds,
+    );
     return {
       ...resultBeforePersistence,
-      databaseWriteCount: persistence.databaseWriteCount,
+      databaseWriteCount:
+        evaluation.databaseWriteCount + persistence.databaseWriteCount,
     };
   }
 
@@ -217,7 +237,7 @@ export class OpportunityScanner {
       removedOpportunityCount,
       failedOpportunityCount: evaluation.failedCandidateIds.size,
       externalRequestCount: evaluation.externalRequestCount,
-      databaseWriteCount: 0,
+      databaseWriteCount: evaluation.databaseWriteCount,
       opportunities: evaluation.opportunities,
     };
     const persistence = await this.repository.savePriceRefresh(
@@ -227,7 +247,8 @@ export class OpportunityScanner {
     );
     return {
       ...resultBeforePersistence,
-      databaseWriteCount: persistence.databaseWriteCount,
+      databaseWriteCount:
+        evaluation.databaseWriteCount + persistence.databaseWriteCount,
     };
   }
 
@@ -248,6 +269,7 @@ export class OpportunityScanner {
         opportunities: [],
         failedCandidateIds: new Set(),
         externalRequestCount: 0,
+        databaseWriteCount: 0,
       };
     }
     const directRequestsBefore = this.directMarketDataClient.requestCount;
@@ -277,54 +299,21 @@ export class OpportunityScanner {
         logCandidateFailure(candidate.pairId, error);
       }
     }
-    const feePromisesBySeries = new Map<string, Promise<KalshiFeeSchedule>>();
-    for (const item of prepared) {
-      if (!feePromisesBySeries.has(item.seriesId)) {
-        feePromisesBySeries.set(
-          item.seriesId,
-          this.getCachedFeeSchedule(item.seriesId),
-        );
-      }
-    }
-    const [directBatch, feeResults] = await Promise.all([
+    const [directBatch, feeBatch] = await Promise.all([
       this.directMarketDataClient.getPairSnapshots(
         prepared.map((item) => item.context),
         options.directBookConcurrency,
       ),
-      Promise.all(
-        [...feePromisesBySeries].map(async ([seriesId, promise]) => {
-          try {
-            return {
-              seriesId,
-              schedule: await promise,
-            };
-          } catch (error: unknown) {
-            return {
-              seriesId,
-              error: error instanceof Error ? error.message : String(error),
-            };
-          }
-        }),
-      ),
+      this.loadFeeSchedules([
+        ...new Set(prepared.map((item) => item.seriesId)),
+      ]),
     ]);
-    const feeScheduleBySeries = new Map<string, KalshiFeeSchedule>();
-    const feeErrorBySeries = new Map<string, string>();
-    for (const result of feeResults) {
-      if (result.schedule) {
-        feeScheduleBySeries.set(result.seriesId, result.schedule);
-      } else {
-        feeErrorBySeries.set(
-          result.seriesId,
-          result.error ?? "Unknown Kalshi fee-schedule failure",
-        );
-      }
-    }
     const opportunities: ScannedOpportunity[] = [];
     for (const item of prepared) {
       const directError = directBatch.errorsByPairId.get(item.candidate.pairId);
-      const feeError = feeErrorBySeries.get(item.seriesId);
+      const feeError = feeBatch.errorsBySeries.get(item.seriesId);
       const snapshot = directBatch.snapshotsByPairId.get(item.candidate.pairId);
-      const feeSchedule = feeScheduleBySeries.get(item.seriesId);
+      const feeSchedule = feeBatch.schedulesBySeries.get(item.seriesId);
       if (directError || feeError || !snapshot || !feeSchedule) {
         failedCandidateIds.add(item.candidate.pairId);
         logCandidateFailure(
@@ -356,6 +345,7 @@ export class OpportunityScanner {
         directRequestsBefore +
         this.kalshiClient.requestCount -
         kalshiRequestsBefore,
+      databaseWriteCount: feeBatch.databaseWriteCount,
     };
   }
 
@@ -450,24 +440,83 @@ export class OpportunityScanner {
   }
 
   /**
-   * Loads one Kalshi series schedule with a bounded in-memory TTL.
+   * Resolves fee schedules from memory, the durable cache, and finally Kalshi.
    *
-   * @param seriesId - Kalshi series ticker.
-   * @returns Current fee schedule.
+   * @param seriesIds - Unique Kalshi series tickers required by this batch.
+   * @returns Available schedules, isolated failures, and durable write count.
    */
-  private async getCachedFeeSchedule(
-    seriesId: string,
-  ): Promise<KalshiFeeSchedule> {
-    const cached = this.feeScheduleCache.get(seriesId);
-    if (cached && cached.expiresAtMs > Date.now()) {
-      return cached.schedule;
+  private async loadFeeSchedules(
+    seriesIds: readonly string[],
+  ): Promise<FeeScheduleBatch> {
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    const schedulesBySeries = new Map<string, KalshiFeeSchedule>();
+    const errorsBySeries = new Map<string, string>();
+    const missingFromMemory: string[] = [];
+    for (const seriesId of seriesIds) {
+      const cached = this.feeScheduleCache.get(seriesId);
+      if (cached && cached.expiresAtMs > nowMs) {
+        schedulesBySeries.set(seriesId, cached.schedule);
+      } else {
+        missingFromMemory.push(seriesId);
+      }
     }
-    const schedule = await this.kalshiClient.getFeeSchedule(seriesId);
-    this.feeScheduleCache.set(seriesId, {
-      schedule,
-      expiresAtMs: Date.now() + feeScheduleCacheTtlMs,
-    });
-    return schedule;
+
+    const durableSchedules = await this.repository.getValidKalshiFeeSchedules(
+      missingFromMemory,
+      nowIso,
+    );
+    const missingFromDatabase: string[] = [];
+    for (const seriesId of missingFromMemory) {
+      const durable = durableSchedules.get(seriesId);
+      if (durable) {
+        const expiresAtMs = Date.parse(durable.expiresAtIso);
+        schedulesBySeries.set(seriesId, durable.schedule);
+        this.feeScheduleCache.set(seriesId, {
+          schedule: durable.schedule,
+          expiresAtMs,
+        });
+      } else {
+        missingFromDatabase.push(seriesId);
+      }
+    }
+
+    const fetchedSchedules: KalshiFeeSchedule[] = [];
+    await Promise.all(
+      missingFromDatabase.map(async (seriesId) => {
+        try {
+          const schedule = await this.kalshiClient.getFeeSchedule(seriesId);
+          schedulesBySeries.set(seriesId, schedule);
+          fetchedSchedules.push(schedule);
+        } catch (error: unknown) {
+          errorsBySeries.set(
+            seriesId,
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }),
+    );
+
+    const fetchedAtMs = Date.now();
+    const fetchedAtIso = new Date(fetchedAtMs).toISOString();
+    const expiresAtMs = fetchedAtMs + feeScheduleCacheTtlMs;
+    const expiresAtIso = new Date(expiresAtMs).toISOString();
+    for (const schedule of fetchedSchedules) {
+      this.feeScheduleCache.set(schedule.seriesTicker, {
+        schedule,
+        expiresAtMs,
+      });
+    }
+    const databaseWriteCount = await this.repository.saveKalshiFeeSchedules(
+      fetchedSchedules,
+      fetchedAtIso,
+      expiresAtIso,
+    );
+    return {
+      schedulesBySeries,
+      errorsBySeries,
+      databaseWriteCount,
+    };
   }
 }
 

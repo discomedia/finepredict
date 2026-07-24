@@ -5,6 +5,7 @@ import postgres from "postgres";
 import { normalizeDatabaseUrlSslMode } from "../config.js";
 import { log } from "../log.js";
 import "../load-environment.js";
+import { handleMigrationNotice } from "./postgres-notices.js";
 
 /**
  * Applies checked-in Drizzle migrations to the configured Neon database.
@@ -17,7 +18,10 @@ async function runMigrations(): Promise<void> {
     throw new Error(`FinePredict migrations: DATABASE_URL is required.`);
   }
 
-  const sql = postgres(normalizeDatabaseUrlSslMode(databaseUrl), { max: 1 });
+  const sql = postgres(normalizeDatabaseUrlSslMode(databaseUrl), {
+    max: 1,
+    onnotice: handleMigrationNotice,
+  });
   try {
     await migrate(drizzle(sql), { migrationsFolder: "./drizzle" });
     log("database.runMigrations", "Database migrations completed.");
