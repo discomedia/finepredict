@@ -6,6 +6,7 @@ import { ArbitragePage } from "./ArbitragePage.js";
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   window.sessionStorage.clear();
   vi.unstubAllGlobals();
 });
@@ -35,6 +36,25 @@ describe("ArbitragePage", () => {
             contractOriginAtIso: "2026-07-23T00:00:00.000Z",
             detectedAtIso: "2026-07-24T00:00:00.000Z",
             latestObservedAtIso: "2026-07-24T01:00:00.000Z",
+            apiHistory: {
+              availability: "available",
+              fetchedAtIso: "2026-07-24T02:00:00.000Z",
+              sourceDirection: {
+                buyYesVenue: "kalshi",
+                buyNoVenue: "polymarket",
+              },
+              message: null,
+              points: [
+                {
+                  observedAtIso: "2026-07-23T12:00:00.000Z",
+                  buyYesVenue: "kalshi",
+                  buyNoVenue: "polymarket",
+                  buyYesAveragePriceDollars: 0.35,
+                  buyNoAveragePriceDollars: 0.52,
+                  indicativeGrossEdgeDollarsPerShare: 0.13,
+                },
+              ],
+            },
             points: [
               {
                 opportunityId: "pair-1",
@@ -150,7 +170,32 @@ describe("ArbitragePage", () => {
     }
     fireEvent.click(screen.getAllByRole("button", { name: "History" })[1]!);
     expect(await screen.findByText("Spread history")).toBeInTheDocument();
-    expect(screen.getByText("First detection marked")).toBeInTheDocument();
+    expect(screen.getByText("First detection")).toBeInTheDocument();
+    expect(screen.getByText(/Time — Browser local \(/)).toBeInTheDocument();
+    const timezoneSelect = screen.getByRole("combobox", {
+      name: "History chart time zone",
+    });
+    fireEvent.change(timezoneSelect, { target: { value: "UTC" } });
+    expect(screen.getByText("Time — UTC")).toBeInTheDocument();
+    expect(
+      window.localStorage.getItem("finepredict.arbitrage.historyTimezone"),
+    ).toBe("UTC");
+    const hitArea = screen.getByLabelText(
+      "Move across the chart to inspect prices and spreads",
+    );
+    vi.spyOn(hitArea, "getBoundingClientRect").mockReturnValue({
+      bottom: 390,
+      height: 390,
+      left: 0,
+      right: 980,
+      top: 0,
+      width: 980,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    fireEvent.pointerMove(hitArea, { clientX: 100, clientY: 100 });
+    expect(screen.getByText("Indicative API history")).toBeInTheDocument();
   });
 
   it("shows comparison progress and navigates to the reusable report", async () => {

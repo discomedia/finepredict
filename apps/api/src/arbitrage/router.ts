@@ -11,6 +11,8 @@ import type {
   ScannedOpportunity,
 } from "./opportunities/types.js";
 import type { ReportService } from "../report-service.js";
+import { HistoricalMarketPriceService } from "../markets/historical-price-history.js";
+import { buildApiHistory } from "./opportunities/api-history.js";
 import type { ArbitrageRuntime } from "./runtime.js";
 
 const opportunityStatuses = new Set<OpportunityStatus>([
@@ -43,6 +45,7 @@ const opportunityStrategies = new Set<OpportunityStrategy>([
 export function createArbitrageRouter(
   runtime: ArbitrageRuntime,
   reportService: ReportService,
+  historicalPriceService?: HistoricalMarketPriceService,
 ): Router {
   const router = Router();
 
@@ -99,7 +102,25 @@ export function createArbitrageRouter(
           response.status(404).json({ error: "Opportunity not found." });
           return;
         }
-        response.json(history);
+        const opportunity = historicalPriceService
+          ? await runtime.repository.getOpportunity(
+              String(request.params.opportunityId),
+            )
+          : undefined;
+        const apiHistory =
+          opportunity && historicalPriceService
+            ? await buildApiHistory(
+                opportunity,
+                history.detectedAtIso,
+                historicalPriceService,
+              )
+            : {
+                availability: "unavailable" as const,
+                fetchedAtIso: new Date().toISOString(),
+                message: "Indicative venue history is not configured.",
+                points: [],
+              };
+        response.json({ ...history, apiHistory });
       } catch (error) {
         next(error);
       }

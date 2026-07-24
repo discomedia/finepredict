@@ -724,6 +724,68 @@ export const ArbitrageOpportunityHistoryResponseSchema = z.object({
   points: z.array(ArbitrageOpportunityHistoryPointSchema),
 });
 
+/** One indicative venue-price point reconstructed from public APIs. */
+export const ArbitrageOpportunityApiHistoryPointSchema = z.object({
+  observedAtIso: z.string().datetime(),
+  buyYesVenue: MarketPlatformSchema.optional(),
+  buyNoVenue: MarketPlatformSchema.optional(),
+  buyYesAveragePriceDollars: z.number().min(0).max(1).optional(),
+  buyNoAveragePriceDollars: z.number().min(0).max(1).optional(),
+  legs: z
+    .array(
+      z.object({
+        venue: MarketPlatformSchema,
+        marketId: z.string().min(1),
+        side: z.enum(["yes", "no"]),
+        averagePriceDollars: z.number().min(0).max(1),
+      }),
+    )
+    .optional(),
+  indicativeGrossEdgeDollarsPerShare: z.number(),
+});
+
+/** Availability state for an indicative API history overlay. */
+export const ArbitrageOpportunityApiHistoryAvailabilitySchema = z.enum([
+  "available",
+  "partial",
+  "unavailable",
+]);
+
+/** Indicative historical venue prices attached to scanner history. */
+export const ArbitrageOpportunityApiHistorySchema = z.object({
+  availability: ArbitrageOpportunityApiHistoryAvailabilitySchema,
+  fetchedAtIso: z.string().datetime(),
+  sourceDirection: z
+    .object({
+      buyYesVenue: MarketPlatformSchema,
+      buyNoVenue: MarketPlatformSchema,
+    })
+    .optional(),
+  message: z.string().min(1).nullable(),
+  points: z.array(ArbitrageOpportunityApiHistoryPointSchema).max(500),
+});
+
+/** Complete API-derived history overlay returned for one opportunity. */
+export type ArbitrageOpportunityApiHistory = z.infer<
+  typeof ArbitrageOpportunityApiHistorySchema
+>;
+
+/** One validated indicative API-price point. */
+export type ArbitrageOpportunityApiHistoryPoint = z.infer<
+  typeof ArbitrageOpportunityApiHistoryPointSchema
+>;
+
+/** Complete history response including exact and indicative observations. */
+export const ArbitrageOpportunityHistoryWithApiResponseSchema = z.object({
+  ...ArbitrageOpportunityHistoryResponseSchema.shape,
+  apiHistory: ArbitrageOpportunityApiHistorySchema,
+});
+
+/** Validated arbitrage history response including venue API data. */
+export type ArbitrageOpportunityHistoryWithApiResponse = z.infer<
+  typeof ArbitrageOpportunityHistoryWithApiResponseSchema
+>;
+
 /** Validated hourly arbitrage history response. */
 export type ArbitrageOpportunityHistoryResponse = z.infer<
   typeof ArbitrageOpportunityHistoryResponseSchema

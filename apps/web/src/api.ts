@@ -5,7 +5,7 @@ import {
   ApiKeySummarySchema,
   ArbitrageComparisonReportResponseSchema,
   ArbitrageOpportunityListResponseSchema,
-  ArbitrageOpportunityHistoryResponseSchema,
+  ArbitrageOpportunityHistoryWithApiResponseSchema,
   ArbitrageServiceStatusSchema,
   ArbitrageSummarySchema,
   DisputeCaseSchema,
@@ -24,7 +24,7 @@ import {
   type ApiKeySummary,
   type ArbitrageComparisonReportResponse,
   type ArbitrageOpportunityListResponse,
-  type ArbitrageOpportunityHistoryResponse,
+  type ArbitrageOpportunityHistoryWithApiResponse,
   type ArbitrageRelationship,
   type ArbitrageServiceStatus,
   type ArbitrageSummary,
@@ -202,8 +202,8 @@ export async function getArbitrageOpportunities(
  */
 export async function getArbitrageOpportunityHistory(
   opportunityId: string,
-): Promise<ArbitrageOpportunityHistoryResponse> {
-  return ArbitrageOpportunityHistoryResponseSchema.parse(
+): Promise<ArbitrageOpportunityHistoryWithApiResponse> {
+  return ArbitrageOpportunityHistoryWithApiResponseSchema.parse(
     await requestJson(
       `/api/arbitrage/opportunities/${encodeURIComponent(opportunityId)}/history`,
     ),

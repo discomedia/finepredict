@@ -38,6 +38,7 @@ import {
   MarketSearchUnavailableError,
 } from "./markets/search.js";
 import { MarketPriceHistoryService } from "./markets/price-history.js";
+import { HistoricalMarketPriceService } from "./markets/historical-price-history.js";
 import { ReportService } from "./report-service.js";
 
 /** Dependencies used to construct the HTTP application. */
@@ -66,6 +67,9 @@ export function createApp(dependencies: CreateAppDependencies): Express {
     dependencies.fetchImplementation,
   );
   const marketPriceHistoryService = new MarketPriceHistoryService(
+    dependencies.fetchImplementation,
+  );
+  const historicalMarketPriceService = new HistoricalMarketPriceService(
     dependencies.fetchImplementation,
   );
   app.disable("x-powered-by");
@@ -172,7 +176,11 @@ export function createApp(dependencies: CreateAppDependencies): Express {
   if (dependencies.arbitrageRuntime) {
     app.use(
       "/api/arbitrage",
-      createArbitrageRouter(dependencies.arbitrageRuntime, reportService),
+      createArbitrageRouter(
+        dependencies.arbitrageRuntime,
+        reportService,
+        historicalMarketPriceService,
+      ),
     );
   }
 

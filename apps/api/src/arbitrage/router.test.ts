@@ -6,6 +6,7 @@ import { createArbitrageRouter, parseOpportunityFilters } from "./router.js";
 import type { ArbitrageRuntime } from "./runtime.js";
 import type { ScannedOpportunity } from "./opportunities/types.js";
 import type { ReportService } from "../report-service.js";
+import type { HistoricalMarketPriceService } from "../markets/historical-price-history.js";
 
 /** Narrow saved-report resolver used by the router test double. */
 type ComparisonResolverFixture = (
@@ -106,6 +107,66 @@ describe("arbitrage API", () => {
         },
       ],
     });
+  });
+
+  it("attaches indicative API history without changing stored observations", async () => {
+    const historicalPriceService = {
+      getHistoricalPriceSeries: vi.fn(async () => [
+        {
+          market: { platform: "kalshi", externalId: "KXTEST" },
+          available: true,
+          points: [
+            {
+              timestampIso: "2026-07-23T00:00:00.000Z",
+              yesPriceDollars: 0.4,
+            },
+          ],
+        },
+        {
+          market: {
+            platform: "polymarket",
+            externalId: "0xtest",
+            yesTokenId: "yes",
+          },
+          available: true,
+          points: [
+            {
+              timestampIso: "2026-07-23T00:00:00.000Z",
+              yesPriceDollars: 0.5,
+            },
+          ],
+        },
+      ]),
+    } as unknown as HistoricalMarketPriceService;
+    const app = express();
+    app.use(
+      "/api/arbitrage",
+      createArbitrageRouter(
+        runtimeFixture(),
+        reportServiceFixture(),
+        historicalPriceService,
+      ),
+    );
+
+    const response = await request(app).get(
+      "/api/arbitrage/opportunities/pair-1/history",
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.apiHistory).toMatchObject({
+      availability: "available",
+      points: [
+        {
+          indicativeGrossEdgeDollarsPerShare: 0.1,
+          buyYesAveragePriceDollars: 0.4,
+          buyNoAveragePriceDollars: 0.5,
+        },
+      ],
+    });
+    expect(response.body.points).toHaveLength(1);
+    expect(
+      historicalPriceService.getHistoricalPriceSeries,
+    ).toHaveBeenCalledTimes(1);
   });
 });
 

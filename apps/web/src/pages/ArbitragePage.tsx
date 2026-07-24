@@ -1,6 +1,6 @@
 import type {
   ArbitrageOpportunity,
-  ArbitrageOpportunityHistoryResponse,
+  ArbitrageOpportunityHistoryWithApiResponse,
   ArbitrageRelationship,
   ArbitrageStrategy,
   ArbitrageServiceStatus,
@@ -15,7 +15,14 @@ import {
   LoaderCircle,
   RefreshCw,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type PointerEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate } from "react-router-dom";
 
 import {
@@ -31,6 +38,22 @@ import { ProductHeader, errorMessage } from "../components/ProductPage.js";
 
 /** Minimum-edge choices shown in cents per paired share. */
 const minimumEdgeChoices = [1, 3, 5, 10] as const;
+
+/** Browser-persisted chart timezone choices. */
+const HISTORY_TIME_ZONE_STORAGE_KEY = "finepredict.arbitrage.historyTimezone";
+
+/** Supported history-chart timezone selections. */
+type HistoryTimeZone = "browser" | "America/New_York" | "UTC";
+
+/** Visible history-chart timezone options. */
+const historyTimeZoneOptions: readonly {
+  readonly label: string;
+  readonly value: HistoryTimeZone;
+}[] = [
+  { label: "Browser local", value: "browser" },
+  { label: "America/New_York (ET)", value: "America/New_York" },
+  { label: "UTC", value: "UTC" },
+];
 
 /** Reviewed relationship filter choices. */
 const relationshipChoices: readonly {
@@ -78,6 +101,7 @@ export function ArbitragePage() {
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState<string | null>(null);
   const [clockMs, setClockMs] = useState(() => Date.now());
+  const [historyTimeZone, setHistoryTimeZone] = usePersistentHistoryTimeZone();
   const reloadTimer = useRef<number | undefined>(undefined);
   const streamConnected = useRef(false);
 
@@ -341,7 +365,12 @@ export function ArbitragePage() {
             </p>
           </div>
         ) : (
-          <OpportunityTable opportunities={opportunities} clockMs={clockMs} />
+          <OpportunityTable
+            opportunities={opportunities}
+            clockMs={clockMs}
+            historyTimeZone={historyTimeZone}
+            onHistoryTimeZoneChange={setHistoryTimeZone}
+          />
         )}
         <p className="arbitrage-footnote">
           “Pure” requires reviewed settlement equivalence. Near-arbitrage and
@@ -379,6 +408,8 @@ function Metric({ label, value }: MetricProps) {
 interface OpportunityTableProps {
   opportunities: readonly ArbitrageOpportunity[];
   clockMs: number;
+  historyTimeZone: HistoryTimeZone;
+  onHistoryTimeZoneChange: (timeZone: HistoryTimeZone) => void;
 }
 
 /** Sortable opportunity-table columns. */
@@ -420,7 +451,12 @@ const opportunityColumns: readonly OpportunityColumn[] = [
  * @param props - Opportunity rows and current clock.
  * @returns Responsive opportunity table.
  */
-function OpportunityTable({ opportunities, clockMs }: OpportunityTableProps) {
+function OpportunityTable({
+  opportunities,
+  clockMs,
+  historyTimeZone,
+  onHistoryTimeZoneChange,
+}: OpportunityTableProps) {
   const [sortKey, setSortKey] = useState<OpportunitySortKey>("net");
   const [sortDirection, setSortDirection] =
     useState<SortDirection>("descending");
@@ -488,6 +524,8 @@ function OpportunityTable({ opportunities, clockMs }: OpportunityTableProps) {
               key={opportunity.opportunityId}
               opportunity={opportunity}
               clockMs={clockMs}
+              historyTimeZone={historyTimeZone}
+              onHistoryTimeZoneChange={onHistoryTimeZoneChange}
             />
           ))}
         </tbody>
@@ -500,6 +538,8 @@ function OpportunityTable({ opportunities, clockMs }: OpportunityTableProps) {
 interface OpportunityRowProps {
   opportunity: ArbitrageOpportunity;
   clockMs: number;
+  historyTimeZone: HistoryTimeZone;
+  onHistoryTimeZoneChange: (timeZone: HistoryTimeZone) => void;
 }
 
 /**
@@ -508,7 +548,12 @@ interface OpportunityRowProps {
  * @param props - Current opportunity and clock.
  * @returns Table row.
  */
-function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
+function OpportunityRow({
+  opportunity,
+  clockMs,
+  historyTimeZone,
+  onHistoryTimeZoneChange,
+}: OpportunityRowProps) {
   const navigate = useNavigate();
   const progressTimers = useRef<number[]>([]);
   const [savedComparisonSlug, setSavedComparisonSlug] = useState<string | null>(
@@ -519,7 +564,7 @@ function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
   const [comparing, setComparing] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] =
-    useState<ArbitrageOpportunityHistoryResponse | null>(null);
+    useState<ArbitrageOpportunityHistoryWithApiResponse | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const title = getOpportunityTitle(opportunity);
@@ -761,7 +806,11 @@ function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
                 {historyError}
               </p>
             ) : history ? (
-              <OpportunityHistoryChart history={history} />
+              <OpportunityHistoryChart
+                history={history}
+                timeZone={historyTimeZone}
+                onTimeZoneChange={onHistoryTimeZoneChange}
+              />
             ) : null}
           </td>
         </tr>
@@ -770,169 +819,393 @@ function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
   );
 }
 
+/** Chart geometry shared by paths, ticks, markers, and pointer tracking. */
+const historyChartDimensions = {
+  width: 980,
+  height: 390,
+  left: 58,
+  right: 962,
+  priceTop: 28,
+  priceBottom: 178,
+  spreadTop: 218,
+  spreadBottom: 314,
+  axisY: 354,
+} as const;
+
+/** One timestamped point that can be drawn or selected by the crosshair. */
+interface HistoryCursorPoint {
+  observedAtIso: string;
+  source: "api" | "observed";
+  buyYesAveragePriceDollars?: number | undefined;
+  buyNoAveragePriceDollars?: number | undefined;
+  legs?:
+    | readonly {
+        venue: "kalshi" | "polymarket";
+        marketId: string;
+        side: "yes" | "no";
+        averagePriceDollars: number;
+      }[]
+    | undefined;
+  indicativeGrossEdgeDollarsPerShare?: number | undefined;
+  grossEdgeDollarsPerShare?: number | undefined;
+  netEdgeDollarsPerShare?: number | undefined;
+}
+
 /**
- * Renders hourly executable prices and spread for one scanner pair.
+ * Renders exact scanner observations and indicative API history.
  *
- * @param props - Persisted hourly history.
- * @returns Accessible dual-scale SVG chart.
+ * @param props - History response and shared timezone selection.
+ * @returns Interactive, accessible history chart.
  */
 function OpportunityHistoryChart({
   history,
+  timeZone,
+  onTimeZoneChange,
 }: {
-  history: ArbitrageOpportunityHistoryResponse;
+  history: ArbitrageOpportunityHistoryWithApiResponse;
+  timeZone: HistoryTimeZone;
+  onTimeZoneChange: (timeZone: HistoryTimeZone) => void;
 }) {
-  const points = history.points;
-  if (points.length === 0) {
+  const exactPoints = history.points;
+  const apiPoints = history.apiHistory.points;
+  const allTimestamps = [
+    ...exactPoints.map((point) => Date.parse(point.observedAtIso)),
+    ...apiPoints.map((point) => Date.parse(point.observedAtIso)),
+  ].filter(Number.isFinite);
+  if (allTimestamps.length === 0) {
     return (
       <div className="arbitrage-history-panel">
         <h3>Spread history</h3>
         <p className="arbitrage-history-message">
-          The scanner has not completed an hourly observation for this pair yet.
+          No venue or scanner history is available for this opportunity yet.
         </p>
       </div>
     );
   }
-  const dimensions = { width: 860, height: 300 };
-  const detectionMs = Date.parse(points[0]!.observedAtIso);
+
+  const firstDataMs = Math.min(...allTimestamps);
+  const detectionMs = history.detectedAtIso
+    ? Date.parse(history.detectedAtIso)
+    : exactPoints[0]
+      ? Date.parse(exactPoints[0].observedAtIso)
+      : Number.NaN;
   const originMs = history.contractOriginAtIso
     ? Date.parse(history.contractOriginAtIso)
-    : detectionMs;
-  const latestMs = Date.parse(points.at(-1)!.observedAtIso);
-  const timeDomain = getHistoryTimeDomain(originMs, latestMs);
-  const hasLegacyPrices = points.every(
+    : firstDataMs;
+  const latestMs = Math.max(...allTimestamps);
+  const timeDomain = getHistoryTimeDomain(
+    Math.min(originMs, firstDataMs),
+    latestMs,
+  );
+  const hasObservedPrices =
+    exactPoints.length > 0 &&
+    exactPoints.every(
+      (point) =>
+        point.buyYesAveragePriceDollars !== undefined &&
+        point.buyNoAveragePriceDollars !== undefined,
+    );
+  const hasApiPrices = apiPoints.some(
     (point) =>
       point.buyYesAveragePriceDollars !== undefined &&
       point.buyNoAveragePriceDollars !== undefined,
   );
-  const priceDomain = getHistoryPriceDomain(points);
-  const spreadDomain = getHistorySpreadDomain(points);
+  const priceDomain = getHistoryPriceDomain(exactPoints, apiPoints);
+  const spreadDomain = getHistorySpreadDomain(exactPoints, apiPoints);
+  const cursorTimes = useMemo(
+    () =>
+      [
+        ...new Set(
+          [...exactPoints, ...apiPoints].map((point) => point.observedAtIso),
+        ),
+      ]
+        .map(Date.parse)
+        .filter(Number.isFinite)
+        .sort((left, right) => left - right),
+    [apiPoints, exactPoints],
+  );
+  const [cursorMs, setCursorMs] = useState<number | null>(null);
+  const cursorPoint =
+    cursorMs === null
+      ? null
+      : getHistoryCursorPoint(cursorMs, exactPoints, apiPoints);
+  const pointerMove = (event: PointerEvent<SVGRectElement>): void => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const chartX =
+      historyChartDimensions.left +
+      ((event.clientX - bounds.left) / bounds.width) *
+        (historyChartDimensions.right - historyChartDimensions.left);
+    const timestamp = scaleHistoryValue(
+      chartX,
+      historyChartDimensions.left,
+      historyChartDimensions.right,
+      timeDomain.minimum,
+      timeDomain.maximum,
+    );
+    setCursorMs(findNearestTimestamp(timestamp, cursorTimes));
+  };
+  const cursorX =
+    cursorMs === null
+      ? null
+      : scaleHistoryValue(
+          cursorMs,
+          timeDomain.minimum,
+          timeDomain.maximum,
+          historyChartDimensions.left,
+          historyChartDimensions.right,
+        );
+  const apiStartMs = apiPoints[0]
+    ? Date.parse(apiPoints[0].observedAtIso)
+    : Number.NaN;
+
   return (
     <div className="arbitrage-history-panel">
       <div className="arbitrage-history-heading">
         <div>
-          <span className="eyebrow">Hourly scanner observations</span>
+          <span className="eyebrow">
+            API context + hourly scanner observations
+          </span>
           <h3>Spread history</h3>
         </div>
-        <span className="arbitrage-history-meta">
-          Last observed {formatTimestamp(points.at(-1)!.observedAtIso)}
-        </span>
+        <label className="arbitrage-history-timezone">
+          <span>Time zone</span>
+          <select
+            aria-label="History chart time zone"
+            value={timeZone}
+            onChange={(event) =>
+              onTimeZoneChange(event.target.value as HistoryTimeZone)
+            }
+          >
+            {historyTimeZoneOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       <p className="arbitrage-history-intro">
-        {hasLegacyPrices
-          ? "Prices are the executable YES and NO legs used by the scanner. "
-          : "The portfolio spread is shown across its complete set of legs. "}
-        Spread is shown before and after modeled fees; origin and first
-        detection are marked when timestamps are available.
+        {hasObservedPrices
+          ? "Solid lines are executable scanner observations; dashed lines are indicative venue API prices before detection. "
+          : "Solid lines are exact scanner spread observations; dashed lines are indicative venue API prices before detection. "}
+        API history uses public prices rather than historical order-book depth,
+        so its spread is descriptive, not a guaranteed fill.
       </p>
       <div className="arbitrage-history-legend" aria-hidden="true">
-        {hasLegacyPrices ? (
+        {hasApiPrices ? (
+          <>
+            <span>
+              <i className="api-yes" />
+              API YES price
+            </span>
+            <span>
+              <i className="api-no" />
+              API NO price
+            </span>
+          </>
+        ) : null}
+        {hasObservedPrices ? (
           <>
             <span>
               <i className="yes" />
-              YES price
+              Observed YES price
             </span>
             <span>
               <i className="no" />
-              NO price
+              Observed NO price
             </span>
           </>
         ) : null}
         <span>
+          <i className="api-gross" />
+          Indicative gross spread
+        </span>
+        <span>
           <i className="gross" />
-          Gross spread
+          Observed gross spread
         </span>
         <span>
           <i className="net" />
-          Post-fee edge
+          Observed post-fee edge
         </span>
       </div>
-      <svg
-        aria-label="Hourly arbitrage prices and spread history"
-        className="arbitrage-history-chart"
-        role="img"
-        viewBox={`0 0 ${dimensions.width} ${dimensions.height}`}
-      >
-        {renderHistoryGrid(dimensions, priceDomain, spreadDomain)}
-        {renderHistoryMarker("origin", originMs, timeDomain, dimensions)}
-        {originMs < detectionMs
-          ? renderHistoryMarker("detected", detectionMs, timeDomain, dimensions)
-          : null}
-        {hasLegacyPrices ? (
-          <>
-            <path
-              className="yes"
-              d={createHistoryPath(
-                points,
-                dimensions,
+      <div className="arbitrage-history-chart-frame">
+        <svg
+          aria-label="Interactive arbitrage price and spread history"
+          className="arbitrage-history-chart"
+          role="img"
+          viewBox={`0 0 ${historyChartDimensions.width} ${historyChartDimensions.height}`}
+        >
+          {renderHistoryGrid(priceDomain, spreadDomain)}
+          {renderHistoryTicks(timeDomain, timeZone)}
+          {Number.isFinite(originMs)
+            ? renderHistoryMarker(
+                "origin",
+                "Contract origin",
+                originMs,
                 timeDomain,
-                priceDomain,
-                (point) => (point.buyYesAveragePriceDollars ?? 0) * 100,
-                12,
-                156,
-              )}
-            />
-            <path
-              className="no"
-              d={createHistoryPath(
-                points,
-                dimensions,
+              )
+            : null}
+          {Number.isFinite(apiStartMs) &&
+          apiStartMs > Math.min(originMs, firstDataMs)
+            ? renderHistoryMarker(
+                "api",
+                "API history begins",
+                apiStartMs,
                 timeDomain,
-                priceDomain,
-                (point) => (point.buyNoAveragePriceDollars ?? 0) * 100,
-                12,
-                156,
-              )}
-            />
-          </>
-        ) : null}
-        <path
-          className="gross"
-          d={createHistoryPath(
-            points,
-            dimensions,
-            timeDomain,
-            spreadDomain,
-            (point) => point.grossEdgeDollarsPerShare * 100,
-            180,
-            256,
-          )}
-        />
-        <path
-          className="net"
-          d={createHistoryPath(
-            points,
-            dimensions,
-            timeDomain,
-            spreadDomain,
-            (point) => point.netEdgeDollarsPerShare * 100,
-            180,
-            256,
-          )}
-        />
-      </svg>
-      <div className="arbitrage-history-axis">
-        <span>{formatHistoryDate(originMs)}</span>
-        <span>
-          {originMs < detectionMs
-            ? "First detection marked"
-            : "First detection"}
-        </span>
-        <span>{formatHistoryDate(latestMs)}</span>
+              )
+            : null}
+          {Number.isFinite(detectionMs)
+            ? renderHistoryMarker(
+                "detected",
+                "First detection",
+                detectionMs,
+                timeDomain,
+              )
+            : null}
+          {hasApiPrices ? (
+            <>
+              <path
+                className="api-yes"
+                d={createHistoryPath(
+                  apiPoints,
+                  timeDomain,
+                  priceDomain,
+                  (point) =>
+                    point.buyYesAveragePriceDollars === undefined
+                      ? null
+                      : point.buyYesAveragePriceDollars * 100,
+                  historyChartDimensions.priceTop,
+                  historyChartDimensions.priceBottom,
+                )}
+              />
+              <path
+                className="api-no"
+                d={createHistoryPath(
+                  apiPoints,
+                  timeDomain,
+                  priceDomain,
+                  (point) =>
+                    point.buyNoAveragePriceDollars === undefined
+                      ? null
+                      : point.buyNoAveragePriceDollars * 100,
+                  historyChartDimensions.priceTop,
+                  historyChartDimensions.priceBottom,
+                )}
+              />
+            </>
+          ) : null}
+          {hasObservedPrices ? (
+            <>
+              <path
+                className="yes"
+                d={createHistoryPath(
+                  exactPoints,
+                  timeDomain,
+                  priceDomain,
+                  (point) =>
+                    point.buyYesAveragePriceDollars === undefined
+                      ? null
+                      : point.buyYesAveragePriceDollars * 100,
+                  historyChartDimensions.priceTop,
+                  historyChartDimensions.priceBottom,
+                )}
+              />
+              <path
+                className="no"
+                d={createHistoryPath(
+                  exactPoints,
+                  timeDomain,
+                  priceDomain,
+                  (point) =>
+                    point.buyNoAveragePriceDollars === undefined
+                      ? null
+                      : point.buyNoAveragePriceDollars * 100,
+                  historyChartDimensions.priceTop,
+                  historyChartDimensions.priceBottom,
+                )}
+              />
+            </>
+          ) : null}
+          <path
+            className="api-gross"
+            d={createHistoryPath(
+              apiPoints,
+              timeDomain,
+              spreadDomain,
+              (point) => point.indicativeGrossEdgeDollarsPerShare * 100,
+              historyChartDimensions.spreadTop,
+              historyChartDimensions.spreadBottom,
+            )}
+          />
+          <path
+            className="gross"
+            d={createHistoryPath(
+              exactPoints,
+              timeDomain,
+              spreadDomain,
+              (point) => point.grossEdgeDollarsPerShare * 100,
+              historyChartDimensions.spreadTop,
+              historyChartDimensions.spreadBottom,
+            )}
+          />
+          <path
+            className="net"
+            d={createHistoryPath(
+              exactPoints,
+              timeDomain,
+              spreadDomain,
+              (point) => point.netEdgeDollarsPerShare * 100,
+              historyChartDimensions.spreadTop,
+              historyChartDimensions.spreadBottom,
+            )}
+          />
+          <rect
+            aria-label="Move across the chart to inspect prices and spreads"
+            className="arbitrage-history-hit-area"
+            x={historyChartDimensions.left}
+            y="0"
+            width={historyChartDimensions.right - historyChartDimensions.left}
+            height={historyChartDimensions.axisY}
+            onPointerLeave={() => setCursorMs(null)}
+            onPointerMove={pointerMove}
+          />
+          {cursorX !== null ? (
+            <>
+              <line
+                className="arbitrage-history-crosshair"
+                x1={cursorX}
+                x2={cursorX}
+                y1="0"
+                y2={historyChartDimensions.axisY}
+              />
+              {cursorPoint
+                ? renderHistoryTooltip(cursorPoint, cursorX, timeZone)
+                : null}
+            </>
+          ) : null}
+        </svg>
       </div>
+      <div className="arbitrage-history-axis-caption">
+        Time — {getHistoryTimeZoneLabel(timeZone)}
+      </div>
+      <p className="arbitrage-history-message">
+        {history.apiHistory.message ?? ""}{" "}
+        {history.latestObservedAtIso
+          ? `Last observed ${formatHistoryTimestamp(Date.parse(history.latestObservedAtIso), timeZone)}.`
+          : ""}
+      </p>
     </div>
   );
 }
 
 /**
- * Draws grid lines and scale labels for both history panels.
+ * Draws horizontal value grids and labels.
  *
- * @param dimensions - SVG dimensions.
  * @param priceDomain - Price range in cents.
  * @param spreadDomain - Spread range in cents.
  * @returns SVG grid elements.
  */
 function renderHistoryGrid(
-  dimensions: { width: number; height: number },
   priceDomain: { minimum: number; maximum: number },
   spreadDomain: { minimum: number; maximum: number },
 ) {
@@ -940,25 +1213,63 @@ function renderHistoryGrid(
     <g key={position}>
       <line
         className="arbitrage-history-grid"
-        x1="0"
-        x2={dimensions.width}
-        y1={12 + position * 144}
-        y2={12 + position * 144}
+        x1={historyChartDimensions.left}
+        x2={historyChartDimensions.right}
+        y1={
+          historyChartDimensions.priceTop +
+          position *
+            (historyChartDimensions.priceBottom -
+              historyChartDimensions.priceTop)
+        }
+        y2={
+          historyChartDimensions.priceTop +
+          position *
+            (historyChartDimensions.priceBottom -
+              historyChartDimensions.priceTop)
+        }
       />
       <line
         className="arbitrage-history-grid"
-        x1="0"
-        x2={dimensions.width}
-        y1={180 + position * 76}
-        y2={180 + position * 76}
+        x1={historyChartDimensions.left}
+        x2={historyChartDimensions.right}
+        y1={
+          historyChartDimensions.spreadTop +
+          position *
+            (historyChartDimensions.spreadBottom -
+              historyChartDimensions.spreadTop)
+        }
+        y2={
+          historyChartDimensions.spreadTop +
+          position *
+            (historyChartDimensions.spreadBottom -
+              historyChartDimensions.spreadTop)
+        }
       />
-      <text x="4" y={16 + position * 144}>
+      <text
+        x="4"
+        y={
+          historyChartDimensions.priceTop +
+          4 +
+          position *
+            (historyChartDimensions.priceBottom -
+              historyChartDimensions.priceTop)
+        }
+      >
         {formatHistoryCents(
           priceDomain.maximum -
             position * (priceDomain.maximum - priceDomain.minimum),
         )}
       </text>
-      <text x="4" y={184 + position * 76}>
+      <text
+        x="4"
+        y={
+          historyChartDimensions.spreadTop +
+          4 +
+          position *
+            (historyChartDimensions.spreadBottom -
+              historyChartDimensions.spreadTop)
+        }
+      >
         {formatHistoryCents(
           spreadDomain.maximum -
             position * (spreadDomain.maximum - spreadDomain.minimum),
@@ -969,54 +1280,100 @@ function renderHistoryGrid(
 }
 
 /**
- * Creates one timestamped history line.
+ * Draws time ticks with explicit date/time units.
  *
- * @param points - Hourly observations.
- * @param dimensions - SVG dimensions.
+ * @param timeDomain - Timeline range.
+ * @param timeZone - Selected display timezone.
+ * @returns SVG tick elements.
+ */
+function renderHistoryTicks(
+  timeDomain: { minimum: number; maximum: number },
+  timeZone: HistoryTimeZone,
+) {
+  return createHistoryTicks(timeDomain).map((timestamp) => {
+    const x = scaleHistoryValue(
+      timestamp,
+      timeDomain.minimum,
+      timeDomain.maximum,
+      historyChartDimensions.left,
+      historyChartDimensions.right,
+    );
+    return (
+      <g key={timestamp}>
+        <line
+          className="arbitrage-history-tick"
+          x1={x}
+          x2={x}
+          y1={historyChartDimensions.axisY - 8}
+          y2={historyChartDimensions.axisY}
+        />
+        <text
+          className="arbitrage-history-x-label"
+          textAnchor={x === historyChartDimensions.left ? "start" : "middle"}
+          x={x}
+          y={historyChartDimensions.axisY + 16}
+        >
+          {formatHistoryTick(timestamp, timeDomain, timeZone)}
+        </text>
+      </g>
+    );
+  });
+}
+
+/**
+ * Creates a timestamped path with gaps for unavailable values.
+ *
+ * @param points - Source points.
  * @param timeDomain - Shared timeline.
  * @param valueDomain - Series value range.
- * @param valueForPoint - Series selector.
- * @param top - Chart top.
- * @param bottom - Chart bottom.
+ * @param valueForPoint - Series value selector.
+ * @param top - Plot top.
+ * @param bottom - Plot bottom.
  * @returns SVG path data.
  */
-function createHistoryPath(
-  points: ArbitrageOpportunityHistoryResponse["points"],
-  dimensions: { width: number; height: number },
+function createHistoryPath<T extends { observedAtIso: string }>(
+  points: readonly T[],
   timeDomain: { minimum: number; maximum: number },
   valueDomain: { minimum: number; maximum: number },
-  valueForPoint: (
-    point: ArbitrageOpportunityHistoryResponse["points"][number],
-  ) => number,
+  valueForPoint: (point: T) => number | null,
   top: number,
   bottom: number,
 ): string {
+  let hasPrevious = false;
   return points
-    .map((point, index) => {
+    .map((point) => {
+      const value = valueForPoint(point);
+      if (value === null) {
+        hasPrevious = false;
+        return "";
+      }
       const x = scaleHistoryValue(
         Date.parse(point.observedAtIso),
         timeDomain.minimum,
         timeDomain.maximum,
-        0,
-        dimensions.width,
+        historyChartDimensions.left,
+        historyChartDimensions.right,
       );
       const y = scaleHistoryValue(
-        valueForPoint(point),
+        value,
         valueDomain.minimum,
         valueDomain.maximum,
         bottom,
         top,
       );
-      return `${index === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+      const command = `${hasPrevious ? "L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`;
+      hasPrevious = true;
+      return command;
     })
+    .filter(Boolean)
     .join(" ");
 }
 
 /**
  * Returns a non-zero timeline range.
  *
- * @param minimum - Origin or first-observation timestamp.
- * @param maximum - Latest observation timestamp.
+ * @param minimum - Earliest timeline timestamp.
+ * @param maximum - Latest timeline timestamp.
  * @returns Timeline range.
  */
 function getHistoryTimeDomain(minimum: number, maximum: number) {
@@ -1024,43 +1381,52 @@ function getHistoryTimeDomain(minimum: number, maximum: number) {
 }
 
 /**
- * Returns a padded price range in cents.
+ * Returns a padded price range in cents from both data sources.
  *
- * @param points - Hourly observations.
+ * @param exactPoints - Scanner observations.
+ * @param apiPoints - Indicative API observations.
  * @returns Price chart range.
  */
 function getHistoryPriceDomain(
-  points: ArbitrageOpportunityHistoryResponse["points"],
+  exactPoints: ArbitrageOpportunityHistoryWithApiResponse["points"],
+  apiPoints: ArbitrageOpportunityHistoryWithApiResponse["apiHistory"]["points"],
 ) {
-  const values = points.flatMap((point) =>
-    point.buyYesAveragePriceDollars !== undefined &&
-    point.buyNoAveragePriceDollars !== undefined
-      ? [
-          point.buyYesAveragePriceDollars * 100,
-          point.buyNoAveragePriceDollars * 100,
-        ]
-      : [],
-  );
-  if (values.length === 0) {
-    return { minimum: 0, maximum: 100 };
-  }
-  return getPaddedHistoryDomain(values, 0, 100);
+  const values = [
+    ...exactPoints.flatMap((point) => [
+      point.buyYesAveragePriceDollars,
+      point.buyNoAveragePriceDollars,
+    ]),
+    ...apiPoints.flatMap((point) => [
+      point.buyYesAveragePriceDollars,
+      point.buyNoAveragePriceDollars,
+    ]),
+  ]
+    .filter((value): value is number => value !== undefined)
+    .map((value) => value * 100);
+  return values.length === 0
+    ? { minimum: 0, maximum: 100 }
+    : getPaddedHistoryDomain(values, 0, 100);
 }
 
 /**
- * Returns a padded spread range in cents.
+ * Returns a padded spread range in cents from both data sources.
  *
- * @param points - Hourly observations.
+ * @param exactPoints - Scanner observations.
+ * @param apiPoints - Indicative API observations.
  * @returns Spread chart range.
  */
 function getHistorySpreadDomain(
-  points: ArbitrageOpportunityHistoryResponse["points"],
+  exactPoints: ArbitrageOpportunityHistoryWithApiResponse["points"],
+  apiPoints: ArbitrageOpportunityHistoryWithApiResponse["apiHistory"]["points"],
 ) {
   return getPaddedHistoryDomain(
-    points.flatMap((point) => [
-      point.grossEdgeDollarsPerShare * 100,
-      point.netEdgeDollarsPerShare * 100,
-    ]),
+    [
+      ...exactPoints.flatMap((point) => [
+        point.grossEdgeDollarsPerShare,
+        point.netEdgeDollarsPerShare,
+      ]),
+      ...apiPoints.map((point) => point.indicativeGrossEdgeDollarsPerShare),
+    ].map((value) => value * 100),
     -100,
     100,
   );
@@ -1090,33 +1456,256 @@ function getPaddedHistoryDomain(
 /**
  * Renders one vertical timeline marker.
  *
- * @param label - Marker label.
+ * @param className - Marker CSS class.
+ * @param label - Visible marker label.
  * @param timestamp - Marker time.
  * @param timeDomain - Shared timeline.
- * @param dimensions - SVG dimensions.
  * @returns SVG marker group.
  */
 function renderHistoryMarker(
+  className: string,
   label: string,
   timestamp: number,
   timeDomain: { minimum: number; maximum: number },
-  dimensions: { width: number; height: number },
 ) {
   const x = scaleHistoryValue(
     timestamp,
     timeDomain.minimum,
     timeDomain.maximum,
-    0,
-    dimensions.width,
+    historyChartDimensions.left,
+    historyChartDimensions.right,
   );
   return (
-    <g key={label} className={`arbitrage-history-marker ${label}`}>
-      <line x1={x} x2={x} y1="0" y2={dimensions.height - 24} />
-      <text x={Math.min(dimensions.width - 72, Math.max(4, x + 4))} y="10">
+    <g key={className} className={`arbitrage-history-marker ${className}`}>
+      <line x1={x} x2={x} y1="0" y2={historyChartDimensions.axisY - 10} />
+      <text
+        x={Math.min(
+          historyChartDimensions.right - 110,
+          Math.max(historyChartDimensions.left + 4, x + 4),
+        )}
+        y="12"
+      >
         {label}
       </text>
     </g>
   );
+}
+
+/**
+ * Finds the nearest available cursor timestamp.
+ *
+ * @param timestamp - Pointer-derived timestamp.
+ * @param timestamps - Candidate timestamps.
+ * @returns Nearest timestamp or null.
+ */
+function findNearestTimestamp(
+  timestamp: number,
+  timestamps: readonly number[],
+): number | null {
+  if (timestamps.length === 0) {
+    return null;
+  }
+  return timestamps.reduce((nearest, candidate) =>
+    Math.abs(candidate - timestamp) < Math.abs(nearest - timestamp)
+      ? candidate
+      : nearest,
+  );
+}
+
+/**
+ * Selects the closest exact/API point for a tooltip.
+ *
+ * @param timestamp - Cursor timestamp.
+ * @param exactPoints - Exact scanner points.
+ * @param apiPoints - Indicative API points.
+ * @returns Closest point, preferring exact observations.
+ */
+function getHistoryCursorPoint(
+  timestamp: number,
+  exactPoints: ArbitrageOpportunityHistoryWithApiResponse["points"],
+  apiPoints: ArbitrageOpportunityHistoryWithApiResponse["apiHistory"]["points"],
+): HistoryCursorPoint | null {
+  const exact = findNearestHistoryPoint(timestamp, exactPoints);
+  if (
+    exact &&
+    Math.abs(Date.parse(exact.observedAtIso) - timestamp) <= 90 * 60 * 1_000
+  ) {
+    return { ...exact, source: "observed" };
+  }
+  const api = findNearestHistoryPoint(timestamp, apiPoints);
+  return api ? { ...api, source: "api" } : null;
+}
+
+/**
+ * Finds the nearest typed history point.
+ *
+ * @param timestamp - Target timestamp.
+ * @param points - Candidate points.
+ * @returns Nearest point or null.
+ */
+function findNearestHistoryPoint<T extends { observedAtIso: string }>(
+  timestamp: number,
+  points: readonly T[],
+): T | null {
+  if (points.length === 0) {
+    return null;
+  }
+  return points.reduce((nearest, point) =>
+    Math.abs(Date.parse(point.observedAtIso) - timestamp) <
+    Math.abs(Date.parse(nearest.observedAtIso) - timestamp)
+      ? point
+      : nearest,
+  );
+}
+
+/**
+ * Renders the crosshair's compact synchronized value tooltip.
+ *
+ * @param point - Selected exact/API point.
+ * @param cursorX - SVG x-coordinate.
+ * @param timeZone - Selected display timezone.
+ * @returns SVG tooltip group.
+ */
+function renderHistoryTooltip(
+  point: HistoryCursorPoint,
+  cursorX: number,
+  timeZone: HistoryTimeZone,
+) {
+  const boxWidth = 198;
+  const boxX =
+    cursorX > historyChartDimensions.right - boxWidth
+      ? cursorX - boxWidth - 8
+      : cursorX + 8;
+  const lines = [
+    formatHistoryTimestamp(Date.parse(point.observedAtIso), timeZone),
+    point.source === "api"
+      ? "Indicative API history"
+      : "Observed scanner point",
+    ...(point.buyYesAveragePriceDollars !== undefined
+      ? [`YES ${formatHistoryCents(point.buyYesAveragePriceDollars * 100)}`]
+      : []),
+    ...(point.buyNoAveragePriceDollars !== undefined
+      ? [`NO ${formatHistoryCents(point.buyNoAveragePriceDollars * 100)}`]
+      : []),
+    ...(point.legs?.map(
+      (leg) =>
+        `${leg.venue.toUpperCase()} ${leg.side.toUpperCase()} ${formatHistoryCents(leg.averagePriceDollars * 100)}`,
+    ) ?? []),
+    ...(point.indicativeGrossEdgeDollarsPerShare !== undefined
+      ? [
+          `Indicative gross ${formatHistoryCents(point.indicativeGrossEdgeDollarsPerShare * 100)}`,
+        ]
+      : []),
+    ...(point.grossEdgeDollarsPerShare !== undefined
+      ? [`Gross ${formatHistoryCents(point.grossEdgeDollarsPerShare * 100)}`]
+      : []),
+    ...(point.netEdgeDollarsPerShare !== undefined
+      ? [`Post-fee ${formatHistoryCents(point.netEdgeDollarsPerShare * 100)}`]
+      : []),
+  ];
+  return (
+    <g className="arbitrage-history-tooltip">
+      <rect
+        x={boxX}
+        y="18"
+        width={boxWidth}
+        height={lines.length * 14 + 12}
+        rx="3"
+      />
+      {lines.map((line, index) => (
+        <text key={line} x={boxX + 9} y={34 + index * 14}>
+          {line}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+/**
+ * Creates evenly spaced time-axis tick positions.
+ *
+ * @param timeDomain - Timeline range.
+ * @returns Six tick timestamps.
+ */
+function createHistoryTicks(timeDomain: { minimum: number; maximum: number }) {
+  return Array.from(
+    { length: 6 },
+    (_, index) =>
+      timeDomain.minimum +
+      ((timeDomain.maximum - timeDomain.minimum) * index) / 5,
+  );
+}
+
+/**
+ * Formats a time-axis tick according to the selected timezone and range.
+ *
+ * @param timestamp - Unix milliseconds.
+ * @param timeDomain - Timeline range.
+ * @param timeZone - Selected display timezone.
+ * @returns Compact date/time label.
+ */
+function formatHistoryTick(
+  timestamp: number,
+  timeDomain: { minimum: number; maximum: number },
+  timeZone: HistoryTimeZone,
+): string {
+  const spanDays =
+    (timeDomain.maximum - timeDomain.minimum) / (24 * 60 * 60 * 1_000);
+  return new Date(timestamp).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(spanDays <= 3 ? { hour: "numeric" as const } : {}),
+    ...(spanDays > 365 ? { year: "numeric" as const } : {}),
+    timeZone: resolveHistoryTimeZone(timeZone),
+  });
+}
+
+/**
+ * Formats a tooltip timestamp with date, time, and timezone abbreviation.
+ *
+ * @param timestamp - Unix milliseconds.
+ * @param timeZone - Selected display timezone.
+ * @returns Fully qualified local timestamp.
+ */
+function formatHistoryTimestamp(
+  timestamp: number,
+  timeZone: HistoryTimeZone,
+): string {
+  return new Date(timestamp).toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: resolveHistoryTimeZone(timeZone),
+    timeZoneName: "short",
+  } as Intl.DateTimeFormatOptions);
+}
+
+/**
+ * Resolves the selected browser-local or fixed timezone.
+ *
+ * @param timeZone - User selection.
+ * @returns IANA timezone identifier.
+ */
+function resolveHistoryTimeZone(timeZone: HistoryTimeZone): string {
+  return timeZone === "browser"
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+    : timeZone;
+}
+
+/**
+ * Returns the visible timezone label used by the chart axis.
+ *
+ * @param timeZone - User selection.
+ * @returns Human-readable timezone label.
+ */
+function getHistoryTimeZoneLabel(timeZone: HistoryTimeZone): string {
+  return timeZone === "browser"
+    ? `Browser local (${resolveHistoryTimeZone(timeZone)})`
+    : timeZone === "America/New_York"
+      ? "America/New_York (ET)"
+      : "UTC";
 }
 
 /**
@@ -1144,20 +1733,6 @@ function scaleHistoryValue(
 }
 
 /**
- * Formats a chart date in the product timezone.
- *
- * @param timestamp - Unix milliseconds.
- * @returns Short date label.
- */
-function formatHistoryDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "America/New_York",
-  });
-}
-
-/**
  * Formats a chart value in cents.
  *
  * @param value - Cents per share.
@@ -1165,6 +1740,30 @@ function formatHistoryDate(timestamp: number): string {
  */
 function formatHistoryCents(value: number): string {
   return `${value.toFixed(1)}¢`;
+}
+
+/**
+ * Reads and persists the shared history chart timezone preference.
+ *
+ * @returns Current timezone and its setter.
+ */
+function usePersistentHistoryTimeZone(): [
+  HistoryTimeZone,
+  (timeZone: HistoryTimeZone) => void,
+] {
+  const [timeZone, setTimeZone] = useState<HistoryTimeZone>(() => {
+    const stored = window.localStorage.getItem(HISTORY_TIME_ZONE_STORAGE_KEY);
+    return stored === "America/New_York" ||
+      stored === "UTC" ||
+      stored === "browser"
+      ? stored
+      : "browser";
+  });
+  const updateTimeZone = (nextTimeZone: HistoryTimeZone): void => {
+    setTimeZone(nextTimeZone);
+    window.localStorage.setItem(HISTORY_TIME_ZONE_STORAGE_KEY, nextTimeZone);
+  };
+  return [timeZone, updateTimeZone];
 }
 
 /** Properties for one numeric table cell. */

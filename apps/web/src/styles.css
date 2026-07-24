@@ -3070,6 +3070,18 @@ main {
   stroke: #3158bf;
 }
 
+.arbitrage-history-legend i.api-yes,
+.arbitrage-history-chart path.api-yes {
+  background: #6b9f8b;
+  stroke: #6b9f8b;
+}
+
+.arbitrage-history-legend i.api-no,
+.arbitrage-history-chart path.api-no {
+  background: #7891d2;
+  stroke: #7891d2;
+}
+
 .arbitrage-history-legend i.gross,
 .arbitrage-history-chart path.gross {
   background: #a36b17;
@@ -3082,10 +3094,16 @@ main {
   stroke: #9f493a;
 }
 
+.arbitrage-history-legend i.api-gross,
+.arbitrage-history-chart path.api-gross {
+  background: #c59a4a;
+  stroke: #c59a4a;
+}
+
 .arbitrage-history-chart {
   display: block;
   width: 100%;
-  height: 300px;
+  height: 390px;
   overflow: visible;
 }
 
@@ -3094,6 +3112,39 @@ main {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 3;
+}
+
+.arbitrage-history-chart path.api-yes,
+.arbitrage-history-chart path.api-no,
+.arbitrage-history-chart path.api-gross {
+  stroke-dasharray: 7 5;
+  stroke-width: 2.5;
+}
+
+.arbitrage-history-hit-area {
+  cursor: crosshair;
+  fill: transparent;
+}
+
+.arbitrage-history-crosshair {
+  stroke: var(--ink);
+  stroke-dasharray: 3 3;
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.arbitrage-history-tooltip {
+  pointer-events: none;
+}
+
+.arbitrage-history-tooltip rect {
+  fill: var(--ink);
+  opacity: 0.95;
+}
+
+.arbitrage-history-tooltip text {
+  fill: var(--surface);
+  font-size: 9px;
 }
 
 .arbitrage-history-grid {
@@ -3120,6 +3171,46 @@ main {
 
 .arbitrage-history-marker.detected line {
   stroke: var(--green);
+}
+
+.arbitrage-history-marker.api line {
+  stroke: #a36b17;
+}
+
+.arbitrage-history-x-label {
+  font-size: 8px !important;
+}
+
+.arbitrage-history-tick {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.arbitrage-history-axis-caption {
+  margin: 2px 0 0 58px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.arbitrage-history-timezone {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.arbitrage-history-timezone select {
+  min-height: 28px;
+  padding: 5px 24px 5px 7px;
+  border: 1px solid var(--line-dark);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-transform: none;
 }
 
 .arbitrage-history-axis {
