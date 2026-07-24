@@ -3,6 +3,7 @@ import {
   AlertEventSchema,
   ApiKeyScopeSchema,
   ApiKeySummarySchema,
+  ArbitrageComparisonReportResponseSchema,
   ArbitrageOpportunityListResponseSchema,
   ArbitrageServiceStatusSchema,
   ArbitrageSummarySchema,
@@ -20,6 +21,7 @@ import {
   type AlertEvent,
   type ApiKeyScope,
   type ApiKeySummary,
+  type ArbitrageComparisonReportResponse,
   type ArbitrageOpportunityListResponse,
   type ArbitrageRelationship,
   type ArbitrageServiceStatus,
@@ -216,6 +218,23 @@ export async function getArbitrageCategories(): Promise<readonly string[]> {
   return ArbitrageCategoriesSchema.parse(
     await requestJson("/api/arbitrage/categories"),
   ).categories;
+}
+
+/**
+ * Resolves one arbitrage pair to an existing or newly analyzed report.
+ *
+ * @param opportunityId - Stable scanner opportunity identifier.
+ * @returns Public report slug and reuse state.
+ */
+export async function createOrGetArbitrageComparison(
+  opportunityId: string,
+): Promise<ArbitrageComparisonReportResponse> {
+  return ArbitrageComparisonReportResponseSchema.parse(
+    await requestJson(
+      `/api/arbitrage/opportunities/${encodeURIComponent(opportunityId)}/compare`,
+      { method: "POST" },
+    ),
+  );
 }
 
 /**

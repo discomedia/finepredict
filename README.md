@@ -46,12 +46,16 @@ public Polymarket and Kalshi catalogs hourly, normalizes titles, outcomes,
 thresholds, and deadlines, and evaluates only high-confidence candidate pairs.
 It refreshes the strongest 24 persisted pairs every five minutes. Executable
 order-book asks, venue fees, gross edge, net edge, depth, and projected profit
-are stored in Postgres and streamed to the page. The scanner does not use an
-LLM, place trades, or treat a merely correlated market as risk-free arbitrage.
-All Kalshi reads share a 200 ms request-start pace with bounded exponential
-backoff. Series fee schedules are cached in Postgres for 24 hours so a new
-deployment can reuse them, and a temporary venue failure retains the pair's
-last successful observation instead of removing it.
+are stored in Postgres and streamed to the page. Every table column is sortable,
+and each pair shows its earlier contract expiry plus a live time-to-expiry.
+Compare creates the normal contract-comparison report from the exact child
+markets; later clicks reuse that durable report instead of repeating extraction
+and LLM analysis. The scanner itself does not use an LLM, place trades, or treat
+a merely correlated market as risk-free arbitrage. All Kalshi reads share a
+200 ms request-start pace with bounded exponential backoff. Series fee schedules
+are cached in Postgres for 24 hours so a new deployment can reuse them, and a
+temporary venue failure retains the pair's last successful observation instead
+of removing it.
 
 ## Local development
 
@@ -185,21 +189,22 @@ endpoint supplies the specific outcome label shown as each result title.
 
 All report reads are public in the MVP.
 
-| Method | Path                           | Purpose                                                      |
-| ------ | ------------------------------ | ------------------------------------------------------------ |
-| `GET`  | `/api/health/live`             | Database-free Railway liveness check                         |
-| `GET`  | `/api/meta`                    | Supported platforms and deterministic-check count            |
-| `GET`  | `/api/markets/search`          | Search one venue with `platform` and `query`                 |
-| `GET`  | `/api/markets/search-pairs`    | Find aligned Polymarket and Kalshi equivalents by `query`    |
-| `GET`  | `/api/arbitrage/opportunities` | List current post-fee cross-venue opportunities              |
-| `GET`  | `/api/arbitrage/summary`       | Return catalog and opportunity counts                        |
-| `GET`  | `/api/arbitrage/status`        | Return discovery, refresh, request, and write metrics        |
-| `GET`  | `/api/arbitrage/stream`        | Stream invalidations for live dashboard updates              |
-| `POST` | `/api/reports`                 | Create a report from `{ "urls": ["..."] }`                   |
-| `GET`  | `/api/reports`                 | List recent public reports                                   |
-| `GET`  | `/api/reports/:slug`           | Fetch a permanent report                                     |
-| `GET`  | `/api/settings`                | Read the active model and allowed choices                    |
-| `PUT`  | `/api/settings`                | Update the model; requires an admin session or emergency key |
+| Method | Path                                                  | Purpose                                                      |
+| ------ | ----------------------------------------------------- | ------------------------------------------------------------ |
+| `GET`  | `/api/health/live`                                    | Database-free Railway liveness check                         |
+| `GET`  | `/api/meta`                                           | Supported platforms and deterministic-check count            |
+| `GET`  | `/api/markets/search`                                 | Search one venue with `platform` and `query`                 |
+| `GET`  | `/api/markets/search-pairs`                           | Find aligned Polymarket and Kalshi equivalents by `query`    |
+| `GET`  | `/api/arbitrage/opportunities`                        | List current post-fee cross-venue opportunities              |
+| `GET`  | `/api/arbitrage/summary`                              | Return catalog and opportunity counts                        |
+| `GET`  | `/api/arbitrage/status`                               | Return discovery, refresh, request, and write metrics        |
+| `GET`  | `/api/arbitrage/stream`                               | Stream invalidations for live dashboard updates              |
+| `POST` | `/api/arbitrage/opportunities/:opportunityId/compare` | Create or reuse the pair's comparison report                 |
+| `POST` | `/api/reports`                                        | Create a report from `{ "urls": ["..."] }`                   |
+| `GET`  | `/api/reports`                                        | List recent public reports                                   |
+| `GET`  | `/api/reports/:slug`                                  | Fetch a permanent report                                     |
+| `GET`  | `/api/settings`                                       | Read the active model and allowed choices                    |
+| `PUT`  | `/api/settings`                                       | Update the model; requires an admin session or emergency key |
 
 Account, watchlist, billing, dispute, and developer routes are documented by
 the generated OpenAPI document at `GET /api/openapi.json`. Developer clients use

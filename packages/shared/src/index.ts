@@ -623,6 +623,17 @@ export const ArbitrageOpportunitySchema = z.object({
 /** One arbitrage opportunity returned to the React dashboard. */
 export type ArbitrageOpportunity = z.infer<typeof ArbitrageOpportunitySchema>;
 
+/** Result of resolving an arbitrage pair to a reusable comparison report. */
+export const ArbitrageComparisonReportResponseSchema = z.object({
+  slug: z.string().min(1),
+  reused: z.boolean(),
+});
+
+/** Reusable comparison-report resolution returned by the API. */
+export type ArbitrageComparisonReportResponse = z.infer<
+  typeof ArbitrageComparisonReportResponseSchema
+>;
+
 /** Bounded public opportunity-list response. */
 export const ArbitrageOpportunityListResponseSchema = z.object({
   filters: z.object({

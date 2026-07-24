@@ -11,6 +11,7 @@ import {
   arbitrageMarkets,
   arbitrageOpportunities,
   arbitrageScans,
+  arbitrageServiceLocks,
   arbitrageServiceRuns,
 } from "../../database/schema.js";
 import type { KalshiFeeSchedule } from "../common/types.js";
@@ -58,6 +59,7 @@ describe("arbitrage Postgres persistence", () => {
         await transaction.delete(arbitrageOpportunities);
         await transaction.delete(arbitrageScans);
         await transaction.delete(arbitrageServiceRuns);
+        await transaction.delete(arbitrageServiceLocks);
         await transaction.delete(arbitrageMarkets);
         await transaction.delete(arbitrageKalshiFeeSchedules);
         const repository = new OpportunityRepository(
@@ -174,6 +176,37 @@ describe("arbitrage Postgres persistence", () => {
 
     expect(retainedAfterFailure).toBe(true);
     expect(removedAfterSuccessfulAbsence).toBe(true);
+  });
+
+  it("does not hold a database transaction while a scanner lease is active", async () => {
+    let ranOperation = false;
+    let rejectedConcurrentOperation = false;
+    try {
+      await resources.database.transaction(async (transaction) => {
+        await transaction.delete(arbitrageServiceLocks);
+        const repository = new OpportunityRepository(
+          transaction as unknown as FinePredictDatabase,
+        );
+        await transaction.insert(arbitrageServiceLocks).values({
+          lockName: "finepredict-arbitrage-service",
+          leaseId: "another-service",
+          expiresAt: new Date(Date.now() + 60_000),
+        });
+        rejectedConcurrentOperation = !(await repository.runWithServiceLock(
+          async () => {
+            ranOperation = true;
+          },
+        ));
+        throw rollbackMarker;
+      });
+    } catch (error) {
+      if (error !== rollbackMarker) {
+        throw error;
+      }
+    }
+
+    expect(rejectedConcurrentOperation).toBe(true);
+    expect(ranOperation).toBe(false);
   });
 });
 

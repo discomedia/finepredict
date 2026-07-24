@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   and,
@@ -9,6 +9,7 @@ import {
   gte,
   gt,
   inArray,
+  lt,
   ne,
   notInArray,
   or,
@@ -22,6 +23,7 @@ import {
   arbitrageMarkets,
   arbitrageOpportunities,
   arbitrageScans,
+  arbitrageServiceLocks,
   arbitrageServiceRuns,
 } from "../../database/schema.js";
 import type { KalshiFeeSchedule } from "../common/types.js";
@@ -77,6 +79,8 @@ export interface DurableKalshiFeeSchedule {
 
 /** Maximum values placed in one Postgres insert statement. */
 const databaseBatchSize = 500;
+const serviceLeaseDurationMilliseconds = 15 * 60 * 1_000;
+const arbitrageServiceLockName = "finepredict-arbitrage-service";
 
 /** Postgres-backed catalog and current-opportunity store. */
 export class OpportunityRepository {
@@ -578,26 +582,49 @@ export class OpportunityRepository {
   }
 
   /**
-   * Executes one scanner operation while holding a cross-process advisory lock.
+   * Executes one scanner operation while holding a short-lived database lease.
    *
    * @param operation - Bounded discovery or price-refresh operation.
-   * @returns Operation result, or undefined when another process holds the lock.
+   * @returns Whether the operation acquired the shared service lease and ran.
    */
   public async runWithServiceLock(
     operation: () => Promise<void>,
   ): Promise<boolean> {
-    return this.database.transaction(async (transaction) => {
-      const result = await transaction.execute<{ locked: boolean }>(
-        sql`select pg_try_advisory_xact_lock(
-          hashtext('finepredict-arbitrage-service')
-        ) as locked`,
-      );
-      if (!result[0]?.locked) {
-        return false;
-      }
+    const leaseId = randomUUID();
+    const now = new Date();
+    const expiresAt = new Date(
+      now.getTime() + serviceLeaseDurationMilliseconds,
+    );
+    const [lease] = await this.database
+      .insert(arbitrageServiceLocks)
+      .values({
+        lockName: arbitrageServiceLockName,
+        leaseId,
+        expiresAt,
+      })
+      .onConflictDoUpdate({
+        target: arbitrageServiceLocks.lockName,
+        set: { leaseId, expiresAt },
+        setWhere: lt(arbitrageServiceLocks.expiresAt, now),
+      })
+      .returning({ leaseId: arbitrageServiceLocks.leaseId });
+    if (lease?.leaseId !== leaseId) {
+      return false;
+    }
+
+    try {
       await operation();
       return true;
-    });
+    } finally {
+      await this.database
+        .delete(arbitrageServiceLocks)
+        .where(
+          and(
+            eq(arbitrageServiceLocks.lockName, arbitrageServiceLockName),
+            eq(arbitrageServiceLocks.leaseId, leaseId),
+          ),
+        );
+    }
   }
 }
 
@@ -636,6 +663,7 @@ function createStableMarketHash(market: NativeBinaryMarket): string {
       endDateIso: market.endDateIso,
       yesTokenId: market.yesTokenId,
       noTokenId: market.noTokenId,
+      marketSlug: market.marketSlug,
       minimumOrderSizeShares: market.minimumOrderSizeShares,
       polymarketFeeRate: market.polymarketFeeRate,
       polymarketFeeExponent: market.polymarketFeeExponent,

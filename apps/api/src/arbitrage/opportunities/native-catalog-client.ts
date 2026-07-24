@@ -409,6 +409,7 @@ export function normalizePolymarketMarket(
     ...(market.endDate ? { endDateIso: market.endDate } : {}),
     yesTokenId,
     noTokenId,
+    marketSlug: market.slug,
     minimumOrderSizeShares: market.orderMinSize,
     polymarketFeeRate: feeRate,
     polymarketFeeExponent: feeExponent,

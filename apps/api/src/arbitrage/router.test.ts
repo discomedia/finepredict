@@ -1,15 +1,28 @@
 import express from "express";
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createArbitrageRouter } from "./router.js";
 import type { ArbitrageRuntime } from "./runtime.js";
 import type { ScannedOpportunity } from "./opportunities/types.js";
+import type { ReportService } from "../report-service.js";
+
+/** Narrow saved-report resolver used by the router test double. */
+type ComparisonResolverFixture = (
+  sourceKey: string,
+  urls: readonly [string, string],
+) => Promise<{
+  report: { slug: string };
+  reused: boolean;
+}>;
 
 describe("arbitrage API", () => {
   it("returns compact reviewed post-fee opportunities", async () => {
     const app = express();
-    app.use("/api/arbitrage", createArbitrageRouter(runtimeFixture()));
+    app.use(
+      "/api/arbitrage",
+      createArbitrageRouter(runtimeFixture(), reportServiceFixture()),
+    );
 
     const response = await request(app).get(
       "/api/arbitrage/opportunities?reviewedOnly=true&minimumNetEdgeCents=3",
@@ -28,7 +41,55 @@ describe("arbitrage API", () => {
     });
     expect(response.body.opportunities[0].kalshi.description).toBeUndefined();
   });
+
+  it("reuses the opportunity's saved comparison report", async () => {
+    const app = express();
+    const getOrCreateComparisonReport = vi.fn(async () => ({
+      report: { slug: "saved-comparison" },
+      reused: true,
+    }));
+    app.use(
+      "/api/arbitrage",
+      createArbitrageRouter(
+        runtimeFixture(),
+        reportServiceFixture(getOrCreateComparisonReport),
+      ),
+    );
+
+    const response = await request(app)
+      .post("/api/arbitrage/opportunities/pair-1/compare")
+      .expect(200);
+
+    expect(response.body).toEqual({
+      reused: true,
+      slug: "saved-comparison",
+    });
+    expect(getOrCreateComparisonReport).toHaveBeenCalledWith(
+      "arbitrage:pair-1",
+      [
+        "https://kalshi.com/markets/kxtest/event-1?market_ticker=KXTEST",
+        "https://polymarket.com/event/event-1/test-child",
+      ],
+    );
+  });
 });
+
+/**
+ * Creates an idempotent saved-report resolver for router tests.
+ *
+ * @param getOrCreateComparisonReport - Optional comparison resolver spy.
+ * @returns Minimal report-service fixture.
+ */
+function reportServiceFixture(
+  getOrCreateComparisonReport: ComparisonResolverFixture = async () => ({
+    report: { slug: "saved-comparison" },
+    reused: true,
+  }),
+): ReportService {
+  return {
+    getOrCreateComparisonReport,
+  } as unknown as ReportService;
+}
 
 /**
  * Creates a read-only in-memory arbitrage runtime.
@@ -98,6 +159,7 @@ function opportunityFixture(): ScannedOpportunity {
       ...sharedMarket,
       venue: "polymarket",
       marketId: "0xtest",
+      marketSlug: "test-child",
       yesTokenId: "yes",
       noTokenId: "no",
       polymarketFeeRate: 0,

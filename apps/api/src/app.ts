@@ -172,7 +172,7 @@ export function createApp(dependencies: CreateAppDependencies): Express {
   if (dependencies.arbitrageRuntime) {
     app.use(
       "/api/arbitrage",
-      createArbitrageRouter(dependencies.arbitrageRuntime),
+      createArbitrageRouter(dependencies.arbitrageRuntime, reportService),
     );
   }
 

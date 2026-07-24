@@ -38,6 +38,7 @@ export interface ReportListItem {
 /** Persistence operations needed by the FinePredict application service. */
 export interface ReportStore {
   getReport(slug: string): Promise<FinePredictReport | null>;
+  getReportBySourceKey(sourceKey: string): Promise<FinePredictReport | null>;
   getSettingsModel(fallback: FinePredictModel): Promise<FinePredictModel>;
   listRecentReports(limit: number): Promise<ReportListItem[]>;
   listSnapshots(
@@ -45,7 +46,7 @@ export interface ReportStore {
     externalId: string,
     limit: number,
   ): Promise<MarketSnapshot[]>;
-  saveReport(report: FinePredictReport): Promise<void>;
+  saveReport(report: FinePredictReport, sourceKey?: string): Promise<void>;
   saveSnapshot(input: SaveSnapshotInput): Promise<MarketSnapshot>;
   updateSettingsModel(model: FinePredictModel): Promise<void>;
 }
@@ -65,6 +66,18 @@ export class NeonReportStore implements ReportStore {
       .select({ payload: reports.payload })
       .from(reports)
       .where(eq(reports.slug, slug))
+      .limit(1);
+    return row ? FinePredictReportSchema.parse(row.payload) : null;
+  }
+
+  /** @inheritdoc */
+  public async getReportBySourceKey(
+    sourceKey: string,
+  ): Promise<FinePredictReport | null> {
+    const [row] = await this.database
+      .select({ payload: reports.payload })
+      .from(reports)
+      .where(eq(reports.sourceKey, sourceKey))
       .limit(1);
     return row ? FinePredictReportSchema.parse(row.payload) : null;
   }
@@ -135,10 +148,14 @@ export class NeonReportStore implements ReportStore {
   }
 
   /** @inheritdoc */
-  public async saveReport(report: FinePredictReport): Promise<void> {
+  public async saveReport(
+    report: FinePredictReport,
+    sourceKey?: string,
+  ): Promise<void> {
     await this.database.insert(reports).values({
       id: report.id,
       slug: report.slug,
+      sourceKey,
       payload: report,
       modelUsed: report.modelUsed,
       createdAt: new Date(report.createdAt),
@@ -194,12 +211,21 @@ export class NeonReportStore implements ReportStore {
 /** In-memory persistence used by tests and credential-free local previews. */
 export class MemoryReportStore implements ReportStore {
   private readonly reportsBySlug = new Map<string, FinePredictReport>();
+  private readonly reportSlugBySourceKey = new Map<string, string>();
   private readonly snapshotsByContract = new Map<string, MarketSnapshot[]>();
   private settingsModel: FinePredictModel | null = null;
 
   /** @inheritdoc */
   public async getReport(slug: string): Promise<FinePredictReport | null> {
     return this.reportsBySlug.get(slug) ?? null;
+  }
+
+  /** @inheritdoc */
+  public async getReportBySourceKey(
+    sourceKey: string,
+  ): Promise<FinePredictReport | null> {
+    const slug = this.reportSlugBySourceKey.get(sourceKey);
+    return slug ? (this.reportsBySlug.get(slug) ?? null) : null;
   }
 
   /** @inheritdoc */
@@ -234,8 +260,14 @@ export class MemoryReportStore implements ReportStore {
   }
 
   /** @inheritdoc */
-  public async saveReport(report: FinePredictReport): Promise<void> {
+  public async saveReport(
+    report: FinePredictReport,
+    sourceKey?: string,
+  ): Promise<void> {
     this.reportsBySlug.set(report.slug, report);
+    if (sourceKey) {
+      this.reportSlugBySourceKey.set(sourceKey, report.slug);
+    }
   }
 
   /** @inheritdoc */

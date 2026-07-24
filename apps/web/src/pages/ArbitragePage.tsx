@@ -4,10 +4,19 @@ import type {
   ArbitrageServiceStatus,
   ArbitrageSummary,
 } from "@finepredict/shared";
-import { RefreshCw } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  GitCompareArrows,
+  LoaderCircle,
+  RefreshCw,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import {
+  createOrGetArbitrageComparison,
   getArbitrageCategories,
   getArbitrageOpportunities,
   getArbitrageServiceStatus,
@@ -149,8 +158,8 @@ export function ArbitragePage() {
     <section className="product-page arbitrage-page">
       <ProductHeader
         eyebrow="Post-fee market scanner"
-        title="Arbitrage"
-        description="FinePredict compares executable Kalshi and Polymarket books, models venue fees, and separates strict equivalence from settlement-basis trades."
+        title="Arbitrage Opportunities"
+        description="Executable prediction market arbitrage opportunities, post fees"
         actions={
           <div
             className={`arbitrage-live-state${connected ? " connected" : ""}`}
@@ -324,6 +333,39 @@ interface OpportunityTableProps {
   clockMs: number;
 }
 
+/** Sortable opportunity-table columns. */
+type OpportunitySortKey =
+  | "contracts"
+  | "trade"
+  | "gross"
+  | "fees"
+  | "net"
+  | "depthProfit"
+  | "expiry"
+  | "updated";
+
+/** Direction applied to the active opportunity sort. */
+type SortDirection = "ascending" | "descending";
+
+/** One sortable table-column definition. */
+interface OpportunityColumn {
+  /** Visible column heading. */
+  readonly label: string;
+  /** Stable value selector used by the sorter. */
+  readonly sortKey: OpportunitySortKey;
+}
+
+const opportunityColumns: readonly OpportunityColumn[] = [
+  { label: "Contracts", sortKey: "contracts" },
+  { label: "Trade", sortKey: "trade" },
+  { label: "Gross", sortKey: "gross" },
+  { label: "Fees", sortKey: "fees" },
+  { label: "Net", sortKey: "net" },
+  { label: "Depth profit", sortKey: "depthProfit" },
+  { label: "Expiry date", sortKey: "expiry" },
+  { label: "Updated", sortKey: "updated" },
+];
+
 /**
  * Renders current opportunities in a horizontally scrollable finance table.
  *
@@ -331,22 +373,69 @@ interface OpportunityTableProps {
  * @returns Responsive opportunity table.
  */
 function OpportunityTable({ opportunities, clockMs }: OpportunityTableProps) {
+  const [sortKey, setSortKey] = useState<OpportunitySortKey>("net");
+  const [sortDirection, setSortDirection] =
+    useState<SortDirection>("descending");
+  const sortedOpportunities = useMemo(
+    () => sortOpportunities(opportunities, sortKey, sortDirection),
+    [opportunities, sortDirection, sortKey],
+  );
+
+  /**
+   * Selects a column or reverses the current column direction.
+   *
+   * @param nextSortKey - Column selected by the user.
+   * @returns Nothing.
+   */
+  const selectSort = (nextSortKey: OpportunitySortKey): void => {
+    if (nextSortKey === sortKey) {
+      setSortDirection((current) =>
+        current === "ascending" ? "descending" : "ascending",
+      );
+      return;
+    }
+    setSortKey(nextSortKey);
+    setSortDirection(
+      nextSortKey === "contracts" || nextSortKey === "expiry"
+        ? "ascending"
+        : "descending",
+    );
+  };
+
   return (
     <div className="arbitrage-table-wrap">
       <table className="arbitrage-table">
         <thead>
           <tr>
-            <th>Contracts</th>
-            <th>Trade</th>
-            <th>Gross</th>
-            <th>Fees</th>
-            <th>Net</th>
-            <th>Depth profit</th>
-            <th>Updated</th>
+            {opportunityColumns.map((column) => {
+              const active = column.sortKey === sortKey;
+              return (
+                <th
+                  key={column.sortKey}
+                  aria-sort={active ? sortDirection : "none"}
+                >
+                  <button
+                    type="button"
+                    onClick={() => selectSort(column.sortKey)}
+                  >
+                    {column.label}
+                    {active ? (
+                      sortDirection === "ascending" ? (
+                        <ArrowUp size={12} aria-hidden="true" />
+                      ) : (
+                        <ArrowDown size={12} aria-hidden="true" />
+                      )
+                    ) : (
+                      <ArrowUpDown size={12} aria-hidden="true" />
+                    )}
+                  </button>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          {opportunities.map((opportunity) => (
+          {sortedOpportunities.map((opportunity) => (
             <OpportunityRow
               key={opportunity.opportunityId}
               opportunity={opportunity}
@@ -372,10 +461,76 @@ interface OpportunityRowProps {
  * @returns Table row.
  */
 function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
-  const title =
-    opportunity.kalshi.outcomeLabel ??
-    opportunity.polymarket.outcomeLabel ??
-    opportunity.kalshi.question;
+  const navigate = useNavigate();
+  const progressTimers = useRef<number[]>([]);
+  const [savedComparisonSlug, setSavedComparisonSlug] = useState<string | null>(
+    () => readSavedComparisonSlug(opportunity.opportunityId),
+  );
+  const [comparisonStatus, setComparisonStatus] = useState<string | null>(null);
+  const [comparisonError, setComparisonError] = useState(false);
+  const [comparing, setComparing] = useState(false);
+  const title = getOpportunityTitle(opportunity);
+  const expiryAtIso = getNearestExpiryIso(opportunity);
+
+  useEffect(
+    () => () => {
+      clearProgressTimers(progressTimers.current);
+    },
+    [],
+  );
+
+  /**
+   * Opens a saved report or runs the idempotent server comparison workflow.
+   *
+   * @returns Nothing after navigation or an inline error.
+   */
+  const compareContracts = async (): Promise<void> => {
+    if (savedComparisonSlug) {
+      await navigate(`/reports/${savedComparisonSlug}`);
+      return;
+    }
+    setComparing(true);
+    setComparisonError(false);
+    setComparisonStatus("Fetching current contract terms…");
+    clearProgressTimers(progressTimers.current);
+    progressTimers.current = [
+      window.setTimeout(
+        () => setComparisonStatus("Checking settlement rules and deadlines…"),
+        700,
+      ),
+      window.setTimeout(
+        () => setComparisonStatus("Preparing the comparison report…"),
+        1_800,
+      ),
+    ];
+    try {
+      const result = await createOrGetArbitrageComparison(
+        opportunity.opportunityId,
+      );
+      clearProgressTimers(progressTimers.current);
+      setSavedComparisonSlug(result.slug);
+      saveComparisonSlug(opportunity.opportunityId, result.slug);
+      setComparisonStatus(
+        result.reused
+          ? "Opening the saved comparison…"
+          : "Analysis complete. Opening comparison…",
+      );
+      await waitForStatusMessage();
+      await navigate(`/reports/${result.slug}`);
+    } catch (error) {
+      clearProgressTimers(progressTimers.current);
+      setComparisonError(true);
+      setComparisonStatus(
+        errorMessage(
+          error,
+          "FinePredict could not create this comparison report.",
+        ),
+      );
+    } finally {
+      setComparing(false);
+    }
+  };
+
   return (
     <tr>
       <td>
@@ -413,6 +568,38 @@ function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
             Basis risk: {opportunity.settlementRisks[0]}
           </span>
         ) : null}
+        <div className="arbitrage-compare">
+          <button
+            className={`secondary-button arbitrage-compare-button${comparing ? " is-comparing" : ""}`}
+            type="button"
+            disabled={comparing}
+            aria-busy={comparing}
+            onClick={() => void compareContracts()}
+          >
+            {comparing ? (
+              <LoaderCircle size={13} aria-hidden="true" />
+            ) : (
+              <GitCompareArrows size={13} aria-hidden="true" />
+            )}
+            {comparing
+              ? "Comparing…"
+              : savedComparisonSlug
+                ? "Open comparison"
+                : "Compare"}
+          </button>
+          {comparisonStatus ? (
+            <span
+              className={
+                comparisonError
+                  ? "arbitrage-compare-status error"
+                  : "arbitrage-compare-status"
+              }
+              role={comparisonError ? "alert" : "status"}
+            >
+              {comparisonStatus}
+            </span>
+          ) : null}
+        </div>
       </td>
       <td>
         <span className="arbitrage-trade-leg">
@@ -441,6 +628,14 @@ function OpportunityRow({ opportunity, clockMs }: OpportunityRowProps) {
         value={formatDollars(opportunity.netProfitDollars)}
         detail="at displayed depth"
         positive
+      />
+      <NumberCell
+        value={expiryAtIso ? formatExpiryDate(expiryAtIso) : "Unknown"}
+        detail={
+          expiryAtIso
+            ? formatTimeToExpiry(expiryAtIso, clockMs)
+            : "venue date unavailable"
+        }
       />
       <NumberCell
         value={relativeTime(opportunity.observedAtIso, clockMs)}
@@ -477,6 +672,176 @@ function NumberCell({ value, detail, positive = false }: NumberCellProps) {
 }
 
 /**
+ * Sorts opportunities by one visible table column with stable tie-breaking.
+ *
+ * @param opportunities - Current filtered opportunity rows.
+ * @param sortKey - Visible column selected by the user.
+ * @param direction - Ascending or descending sort direction.
+ * @returns Newly sorted opportunity rows.
+ */
+function sortOpportunities(
+  opportunities: readonly ArbitrageOpportunity[],
+  sortKey: OpportunitySortKey,
+  direction: SortDirection,
+): readonly ArbitrageOpportunity[] {
+  return [...opportunities].sort((left, right) => {
+    const leftValue = getSortValue(left, sortKey);
+    const rightValue = getSortValue(right, sortKey);
+    if (leftValue === null && rightValue !== null) {
+      return 1;
+    }
+    if (leftValue !== null && rightValue === null) {
+      return -1;
+    }
+    let comparison = 0;
+    if (typeof leftValue === "string" && typeof rightValue === "string") {
+      comparison = leftValue.localeCompare(rightValue, "en-US");
+    } else if (
+      typeof leftValue === "number" &&
+      typeof rightValue === "number"
+    ) {
+      comparison = leftValue - rightValue;
+    }
+    if (comparison === 0) {
+      comparison = left.opportunityId.localeCompare(
+        right.opportunityId,
+        "en-US",
+      );
+    }
+    return direction === "ascending" ? comparison : -comparison;
+  });
+}
+
+/**
+ * Selects one scalar value corresponding to a visible table column.
+ *
+ * @param opportunity - Current opportunity row.
+ * @param sortKey - Visible column identifier.
+ * @returns Comparable string, number, or null for an unknown expiry.
+ */
+function getSortValue(
+  opportunity: ArbitrageOpportunity,
+  sortKey: OpportunitySortKey,
+): string | number | null {
+  switch (sortKey) {
+    case "contracts":
+      return getOpportunityTitle(opportunity).toLocaleLowerCase("en-US");
+    case "trade":
+      return (
+        opportunity.buyYesAveragePriceDollars +
+        opportunity.buyNoAveragePriceDollars
+      );
+    case "gross":
+      return opportunity.grossEdgeDollarsPerShare;
+    case "fees":
+      return opportunity.feeDollarsPerShare;
+    case "net":
+      return opportunity.netEdgeDollarsPerShare;
+    case "depthProfit":
+      return opportunity.netProfitDollars;
+    case "expiry": {
+      const expiryAtIso = getNearestExpiryIso(opportunity);
+      return expiryAtIso ? Date.parse(expiryAtIso) : null;
+    }
+    case "updated":
+      return Date.parse(opportunity.observedAtIso);
+  }
+}
+
+/**
+ * Gets the concise paired-contract title used in the first column.
+ *
+ * @param opportunity - Current opportunity row.
+ * @returns Outcome label or Kalshi proposition.
+ */
+function getOpportunityTitle(opportunity: ArbitrageOpportunity): string {
+  return (
+    opportunity.kalshi.outcomeLabel ??
+    opportunity.polymarket.outcomeLabel ??
+    opportunity.kalshi.question
+  );
+}
+
+/**
+ * Selects the nearer valid venue expiry when both legs supply dates.
+ *
+ * @param opportunity - Current paired opportunity.
+ * @returns Nearest valid expiry timestamp, or undefined.
+ */
+function getNearestExpiryIso(
+  opportunity: ArbitrageOpportunity,
+): string | undefined {
+  const expiries = [
+    opportunity.kalshi.endDateIso,
+    opportunity.polymarket.endDateIso,
+  ].filter(
+    (value): value is string =>
+      value !== undefined && Number.isFinite(Date.parse(value)),
+  );
+  return expiries.sort(
+    (left, right) => Date.parse(left) - Date.parse(right),
+  )[0];
+}
+
+/**
+ * Clears and removes every pending comparison-progress timer.
+ *
+ * @param timerIds - Mutable browser timer identifier list.
+ * @returns Nothing.
+ */
+function clearProgressTimers(timerIds: number[]): void {
+  for (const timerId of timerIds) {
+    window.clearTimeout(timerId);
+  }
+  timerIds.splice(0, timerIds.length);
+}
+
+/**
+ * Allows the final comparison status to render before route navigation.
+ *
+ * @returns Promise resolved after a short visual transition.
+ */
+function waitForStatusMessage(): Promise<void> {
+  return new Promise((resolvePromise) => {
+    window.setTimeout(resolvePromise, 250);
+  });
+}
+
+/**
+ * Reads a completed comparison slug from browser-session storage.
+ *
+ * @param opportunityId - Stable arbitrage opportunity identifier.
+ * @returns Saved slug, or null when unavailable.
+ */
+function readSavedComparisonSlug(opportunityId: string): string | null {
+  try {
+    return window.sessionStorage.getItem(
+      `finepredict:arbitrage-comparison:${opportunityId}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Saves a completed comparison slug for immediate client-side reuse.
+ *
+ * @param opportunityId - Stable arbitrage opportunity identifier.
+ * @param slug - Public report slug.
+ * @returns Nothing.
+ */
+function saveComparisonSlug(opportunityId: string, slug: string): void {
+  try {
+    window.sessionStorage.setItem(
+      `finepredict:arbitrage-comparison:${opportunityId}`,
+      slug,
+    );
+  } catch {
+    // Server-side source-key reuse remains available when storage is blocked.
+  }
+}
+
+/**
  * Formats a dollar-per-share value as cents.
  *
  * @param value - Dollar value.
@@ -508,6 +873,56 @@ function formatDollars(value: number): string {
  */
 function formatShares(value: number): string {
   return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+/**
+ * Formats the displayed nearest expiry in Eastern time.
+ *
+ * @param value - ISO expiry timestamp.
+ * @returns Short absolute date and time.
+ */
+function formatExpiryDate(value: string): string {
+  return new Date(value).toLocaleString("en-US", {
+    timeZone: "America/New_York",
+    timeZoneName: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Formats time remaining using approximate 30-day months plus exact remainder.
+ *
+ * @param value - ISO expiry timestamp.
+ * @param clockMs - Current client clock.
+ * @returns Human-readable months, days, hours, and minutes.
+ */
+function formatTimeToExpiry(value: string, clockMs: number): string {
+  const remainingMinutes = Math.max(
+    0,
+    Math.ceil((Date.parse(value) - clockMs) / 60_000),
+  );
+  if (remainingMinutes === 0) {
+    return "Expired";
+  }
+  const minutesPerHour = 60;
+  const hoursPerDay = 24;
+  const daysPerMonth = 30;
+  const totalHours = Math.floor(remainingMinutes / minutesPerHour);
+  const totalDays = Math.floor(totalHours / hoursPerDay);
+  const months = Math.floor(totalDays / daysPerMonth);
+  const days = totalDays % daysPerMonth;
+  const hours = totalHours % hoursPerDay;
+  const minutes = remainingMinutes % minutesPerHour;
+  return [
+    ...(months > 0 ? [`${String(months)}mo`] : []),
+    ...(months > 0 || days > 0 ? [`${String(days)}d`] : []),
+    ...(months > 0 || days > 0 || hours > 0 ? [`${String(hours)}h`] : []),
+    `${String(minutes)}m`,
+  ].join(" ");
 }
 
 /**

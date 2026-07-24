@@ -49,6 +49,8 @@ export interface NativeBinaryMarket {
   readonly yesTokenId?: string;
   /** NO token identifier for Polymarket. */
   readonly noTokenId?: string;
+  /** Public child-market slug for an exact Polymarket comparison URL. */
+  readonly marketSlug?: string;
   /** Venue minimum order size in shares. */
   readonly minimumOrderSizeShares: number;
   /** Polymarket fee rate from the market's fee schedule. */

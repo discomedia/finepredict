@@ -9,6 +9,7 @@ import type {
   OpportunityStatus,
   ScannedOpportunity,
 } from "./opportunities/types.js";
+import type { ReportService } from "../report-service.js";
 import type { ArbitrageRuntime } from "./runtime.js";
 
 const opportunityStatuses = new Set<OpportunityStatus>([
@@ -29,9 +30,13 @@ const opportunityRelationships = new Set<OpportunityRelationship>([
  * Creates FinePredict's public, read-only arbitrage API.
  *
  * @param runtime - Shared repository and recurring service.
+ * @param reportService - Existing report analysis and persistence service.
  * @returns Express router mounted beneath `/api/arbitrage`.
  */
-export function createArbitrageRouter(runtime: ArbitrageRuntime): Router {
+export function createArbitrageRouter(
+  runtime: ArbitrageRuntime,
+  reportService: ReportService,
+): Router {
   const router = Router();
 
   router.get("/status", (_request, response) => {
@@ -88,6 +93,32 @@ export function createArbitrageRouter(runtime: ArbitrageRuntime): Router {
           return;
         }
         response.json(opportunity);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/opportunities/:opportunityId/compare",
+    async (request, response, next) => {
+      try {
+        const opportunityId = String(request.params.opportunityId);
+        const opportunity =
+          await runtime.repository.getOpportunity(opportunityId);
+        if (!opportunity) {
+          response.status(404).json({ error: "Opportunity not found." });
+          return;
+        }
+        const compact = toOpportunityListItem(opportunity);
+        const resolution = await reportService.getOrCreateComparisonReport(
+          `arbitrage:${opportunityId}`,
+          [compact.kalshi.marketUrl, compact.polymarket.marketUrl],
+        );
+        response.status(resolution.reused ? 200 : 201).json({
+          slug: resolution.report.slug,
+          reused: resolution.reused,
+        });
       } catch (error) {
         next(error);
       }
@@ -300,12 +331,20 @@ function toOpportunityListMarket(
  */
 function buildMarketUrl(market: NativeBinaryMarket): string {
   if (market.venue === "polymarket") {
-    return `https://polymarket.com/event/${encodeURIComponent(market.eventId)}`;
+    const eventUrl = `https://polymarket.com/event/${encodeURIComponent(
+      market.eventId,
+    )}`;
+    return market.marketSlug
+      ? `${eventUrl}/${encodeURIComponent(market.marketSlug)}`
+      : eventUrl;
   }
   const series = market.seriesId?.toLocaleLowerCase("en-US") ?? "markets";
-  return `https://kalshi.com/markets/${encodeURIComponent(series)}/${encodeURIComponent(
+  const eventUrl = `https://kalshi.com/markets/${encodeURIComponent(series)}/${encodeURIComponent(
     market.eventId.toLocaleLowerCase("en-US"),
   )}`;
+  const url = new URL(eventUrl);
+  url.searchParams.set("market_ticker", market.marketId);
+  return url.toString();
 }
 
 /**

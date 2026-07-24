@@ -21,6 +21,7 @@ export const reports = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     slug: text("slug").notNull(),
+    sourceKey: text("source_key"),
     payload: jsonb("payload").notNull(),
     modelUsed: text("model_used"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -30,7 +31,10 @@ export const reports = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [uniqueIndex("reports_slug_unique").on(table.slug)],
+  (table) => [
+    uniqueIndex("reports_slug_unique").on(table.slug),
+    uniqueIndex("reports_source_key_unique").on(table.sourceKey),
+  ],
 );
 
 /** Immutable copies of rules observed at a specific point in time. */
@@ -566,6 +570,19 @@ export const arbitrageServiceRuns = pgTable(
   ],
 );
 
+/**
+ * A short-lived ownership lease for the recurring arbitrage scanner.
+ *
+ * The lease replaces a long-lived Postgres transaction lock so public venue
+ * requests never keep Neon compute active while the scanner waits on network
+ * responses.
+ */
+export const arbitrageServiceLocks = pgTable("arbitrage_service_locks", {
+  lockName: text("lock_name").primaryKey(),
+  leaseId: text("lease_id").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
 /** Database schema exported for Drizzle client construction. */
 export const databaseSchema = {
   alertEvents,
@@ -573,6 +590,7 @@ export const databaseSchema = {
   arbitrageMarkets,
   arbitrageOpportunities,
   arbitrageScans,
+  arbitrageServiceLocks,
   arbitrageServiceRuns,
   apiIdempotency,
   apiKeys,

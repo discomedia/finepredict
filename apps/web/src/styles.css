@@ -2820,7 +2820,7 @@ main {
 
 .arbitrage-table {
   width: 100%;
-  min-width: 1080px;
+  min-width: 1380px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -2836,15 +2836,49 @@ main {
   text-transform: uppercase;
 }
 
+.arbitrage-table th button {
+  display: inline-flex;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.arbitrage-table th button:hover,
+.arbitrage-table th button:focus-visible {
+  color: var(--ink);
+}
+
 .arbitrage-table th:first-child {
-  width: 34%;
+  width: 27%;
   padding-left: 26px;
   text-align: left;
 }
 
 .arbitrage-table th:nth-child(2) {
-  width: 17%;
+  width: 13%;
   text-align: left;
+}
+
+.arbitrage-table th:first-child button,
+.arbitrage-table th:nth-child(2) button {
+  justify-content: flex-start;
+}
+
+.arbitrage-table th:nth-child(7) {
+  width: 15%;
+}
+
+.arbitrage-table th:nth-child(8) {
+  width: 10%;
 }
 
 .arbitrage-table td {
@@ -2926,6 +2960,44 @@ main {
   margin-top: 9px;
   font-size: 10px;
   line-height: 1.45;
+}
+
+.arbitrage-compare {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.arbitrage-compare-button {
+  display: inline-flex;
+  min-height: 32px;
+  padding: 6px 10px;
+  gap: 6px;
+  align-items: center;
+  font-size: 9px;
+}
+
+.arbitrage-compare-button.is-comparing svg {
+  animation: arbitrage-compare-spin 0.8s linear infinite;
+}
+
+.arbitrage-compare-status {
+  max-width: 300px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.arbitrage-compare-status.error {
+  color: #9f493a;
+}
+
+@keyframes arbitrage-compare-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .arbitrage-trade-leg {

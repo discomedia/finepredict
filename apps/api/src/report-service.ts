@@ -27,9 +27,21 @@ export interface ReportServiceDependencies {
   store: ReportStore;
 }
 
+/** Result of resolving an idempotent comparison-report request. */
+export interface ComparisonReportResolution {
+  /** Existing or newly analyzed public report. */
+  readonly report: FinePredictReport;
+  /** Whether the report existed before this request. */
+  readonly reused: boolean;
+}
+
 /** Coordinates extraction, analysis, LLM explanation, snapshots, and reports. */
 export class ReportService {
   private readonly fetchImplementation: typeof fetch;
+  private readonly comparisonTasksBySourceKey = new Map<
+    string,
+    Promise<ComparisonReportResolution>
+  >();
 
   /**
    * Creates the report orchestration service.
@@ -47,6 +59,67 @@ export class ReportService {
    * @returns Complete shareable report.
    */
   public async createReport(urls: string[]): Promise<FinePredictReport> {
+    return this.createAndSaveReport(urls);
+  }
+
+  /**
+   * Reuses a completed comparison report or creates it exactly once per
+   * arbitrage-pair source key in the current API process.
+   *
+   * @param sourceKey - Stable server-owned arbitrage pair identifier.
+   * @param urls - Exactly two current venue market URLs.
+   * @returns Saved report together with whether prior analysis was reused.
+   */
+  public async getOrCreateComparisonReport(
+    sourceKey: string,
+    urls: readonly [string, string],
+  ): Promise<ComparisonReportResolution> {
+    const existingTask = this.comparisonTasksBySourceKey.get(sourceKey);
+    if (existingTask) {
+      return existingTask;
+    }
+    const task = this.resolveComparisonReport(sourceKey, urls);
+    this.comparisonTasksBySourceKey.set(sourceKey, task);
+    try {
+      return await task;
+    } finally {
+      this.comparisonTasksBySourceKey.delete(sourceKey);
+    }
+  }
+
+  /**
+   * Resolves one saved source-key report before performing fresh analysis.
+   *
+   * @param sourceKey - Stable server-owned arbitrage pair identifier.
+   * @param urls - Exactly two current venue market URLs.
+   * @returns Existing or newly created comparison resolution.
+   */
+  private async resolveComparisonReport(
+    sourceKey: string,
+    urls: readonly [string, string],
+  ): Promise<ComparisonReportResolution> {
+    const existing =
+      await this.dependencies.store.getReportBySourceKey(sourceKey);
+    if (existing) {
+      return { report: existing, reused: true };
+    }
+    return {
+      report: await this.createAndSaveReport([...urls], sourceKey),
+      reused: false,
+    };
+  }
+
+  /**
+   * Fetches, analyzes, snapshots, and persists one new report.
+   *
+   * @param urls - One or two supported venue market URLs.
+   * @param sourceKey - Optional stable key used by an idempotent workflow.
+   * @returns Newly persisted shareable report.
+   */
+  private async createAndSaveReport(
+    urls: string[],
+    sourceKey?: string,
+  ): Promise<FinePredictReport> {
     const contracts = await Promise.all(
       urls.map((url) => fetchMarketContract(url, this.fetchImplementation)),
     );
@@ -75,7 +148,7 @@ export class ReportService {
       slug,
       updatedAt: now,
     };
-    await this.dependencies.store.saveReport(report);
+    await this.dependencies.store.saveReport(report, sourceKey);
     log("ReportService.createReport", "Created FinePredict report.", {
       marketCount: markets.length,
       modelUsed,

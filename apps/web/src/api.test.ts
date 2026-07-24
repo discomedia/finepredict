@@ -4,6 +4,7 @@ import { getNeonAuthToken, requestNeonMagicLink } from "./auth.js";
 
 import {
   ApiRequestError,
+  createOrGetArbitrageComparison,
   createReport,
   createDeveloperApiCheckout,
   getCurrentAccount,
@@ -169,6 +170,26 @@ describe("authenticated API client", () => {
       "http://localhost:3001/api/markets/search-pairs?query=Fed+rates",
     );
     expect(getNeonAuthToken).not.toHaveBeenCalled();
+  });
+
+  it("resolves one arbitrage opportunity to a reusable report", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ reused: true, slug: "saved-comparison" }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createOrGetArbitrageComparison("pair / one")).resolves.toEqual(
+      {
+        reused: true,
+        slug: "saved-comparison",
+      },
+    );
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "http://localhost:3001/api/arbitrage/opportunities/pair%20%2F%20one/compare",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
   });
 
   it("retains structured external-service details from a failed report", async () => {

@@ -1,10 +1,12 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { ArbitragePage } from "./ArbitragePage.js";
 
 afterEach(() => {
   cleanup();
+  window.sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -23,8 +25,8 @@ describe("ArbitragePage", () => {
               limit: 100,
               offset: 0,
             },
-            count: 1,
-            opportunities: [opportunityFixture()],
+            count: 2,
+            opportunities: [opportunityFixture(), secondOpportunityFixture()],
           });
         }
         if (url.endsWith("/api/arbitrage/summary")) {
@@ -65,21 +67,137 @@ describe("ArbitragePage", () => {
       }),
     );
 
-    render(<ArbitragePage />);
+    renderArbitragePage();
 
     expect(
       await screen.findByRole("heading", { name: "Executable opportunities" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Arbitrage Opportunities" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Executable prediction market arbitrage opportunities, post fees",
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText("5.0¢")).toBeInTheDocument();
     expect(screen.getByText("3.0¢")).toBeInTheDocument();
     expect(screen.getByText("$0.30")).toBeInTheDocument();
     expect(screen.getByText("70,000")).toBeInTheDocument();
     expect(screen.getByText("25")).toBeInTheDocument();
+    expect(screen.getAllByText(/featured appearance differs/i)).toHaveLength(2);
+    expect(screen.getAllByText(/Dec 31, 2026/)).toHaveLength(2);
+
+    const grossSortButton = screen.getByRole("button", { name: /Gross/i });
+    expect(screen.getAllByRole("row")[1]).toHaveTextContent("Artist");
+    fireEvent.click(grossSortButton);
+    expect(grossSortButton.closest("th")).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    expect(screen.getAllByRole("row")[1]).toHaveTextContent("Beta contract");
+    for (const heading of [
+      "Contracts",
+      "Trade",
+      "Gross",
+      "Fees",
+      "Net",
+      "Depth profit",
+      "Expiry date",
+      "Updated",
+    ]) {
+      expect(
+        screen.getByRole("button", { name: new RegExp(heading, "i") }),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it("shows comparison progress and navigates to the reusable report", async () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let resolveComparison: ((response: Response) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (input) => {
+        const url = String(input);
+        if (url.includes("/api/arbitrage/opportunities?")) {
+          return Response.json({
+            filters: {
+              reviewedOnly: true,
+              minimumNetEdgeDollarsPerShare: 0.03,
+              limit: 100,
+              offset: 0,
+            },
+            count: 1,
+            opportunities: [opportunityFixture()],
+          });
+        }
+        if (url.endsWith("/api/arbitrage/summary")) {
+          return Response.json({
+            kalshiMarketCount: 1,
+            polymarketMarketCount: 1,
+            opportunityCount: 1,
+          });
+        }
+        if (url.endsWith("/api/arbitrage/status")) {
+          return Response.json({
+            running: true,
+            discoveryIntervalSeconds: 3_600,
+            priceRefreshIntervalSeconds: 300,
+            maximumPriceRefreshPairs: 24,
+            connectedClientCount: 0,
+          });
+        }
+        if (url.endsWith("/api/arbitrage/categories")) {
+          return Response.json({ categories: [] });
+        }
+        if (url.endsWith("/api/arbitrage/opportunities/pair-1/compare")) {
+          return new Promise<Response>((resolvePromise) => {
+            resolveComparison = resolvePromise;
+          });
+        }
+        return Response.json({ error: "Unexpected URL." }, { status: 404 });
+      }),
+    );
+    renderArbitragePage();
+    const compareButton = await screen.findByRole("button", {
+      name: "Compare",
+    });
+
+    fireEvent.click(compareButton);
+
     expect(
-      screen.getByText(/featured appearance differs/i),
+      screen.getByText("Fetching current contract terms…"),
     ).toBeInTheDocument();
+    resolveComparison?.(
+      Response.json({ reused: true, slug: "saved-comparison" }),
+    );
+    expect(
+      await screen.findByText("Saved comparison report"),
+    ).toBeInTheDocument();
+    expect(
+      window.sessionStorage.getItem("finepredict:arbitrage-comparison:pair-1"),
+    ).toBe("saved-comparison");
   });
 });
+
+/**
+ * Renders the page with its report-navigation destination.
+ *
+ * @returns Testing Library render result.
+ */
+function renderArbitragePage() {
+  return render(
+    <MemoryRouter initialEntries={["/arbitrage"]}>
+      <Routes>
+        <Route path="/arbitrage" element={<ArbitragePage />} />
+        <Route
+          path="/reports/:slug"
+          element={<div>Saved comparison report</div>}
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 /** Minimal EventSource replacement used by the jsdom test. */
 class FakeEventSource {
@@ -140,6 +258,7 @@ function opportunityFixture() {
       marketUrl: "https://kalshi.com/markets/test/test",
       outcomeLabel: "Artist",
       settlementRulesUrl: "https://example.com/rules.pdf",
+      endDateIso: "2026-12-31T22:00:00.000Z",
     },
     polymarket: {
       ...market,
@@ -148,6 +267,7 @@ function opportunityFixture() {
       question: "Will Artist have a Billboard number-one song?",
       marketUrl: "https://polymarket.com/event/test",
       outcomeLabel: "Artist",
+      endDateIso: "2027-01-31T22:00:00.000Z",
     },
     direction: {
       buyYesVenue: "kalshi",
@@ -168,5 +288,32 @@ function opportunityFixture() {
     roiPercent100: 3.09,
     observedAtIso: "2026-07-24T00:00:00.000Z",
     similarityPercent100: 90,
+  };
+}
+
+/**
+ * Creates a second opportunity whose gross and net rankings differ.
+ *
+ * @returns Schema-valid dashboard fixture.
+ */
+function secondOpportunityFixture() {
+  const first = opportunityFixture();
+  return {
+    ...first,
+    opportunityId: "pair-2",
+    grossEdgeDollarsPerShare: 0.09,
+    feeDollarsPerShare: 0.08,
+    netEdgeDollarsPerShare: 0.01,
+    netProfitDollars: 0.1,
+    kalshi: {
+      ...first.kalshi,
+      marketId: "KXTEST2",
+      outcomeLabel: "Beta contract",
+    },
+    polymarket: {
+      ...first.polymarket,
+      marketId: "0xtest2",
+      outcomeLabel: "Beta contract",
+    },
   };
 }

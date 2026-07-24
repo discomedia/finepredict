@@ -2,17 +2,20 @@ import type { MarketContract } from "@finepredict/shared";
 import { eq, inArray } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import "../load-environment.js";
 import { MonitoringStore } from "../monitoring/store.js";
-import { normalizeDatabaseUrlSslMode } from "../config.js";
+import { loadConfig, normalizeDatabaseUrlSslMode } from "../config.js";
+import { ReportService } from "../report-service.js";
 import { createDatabaseResources } from "./client.js";
 import { ProductStore } from "./product-store.js";
+import { NeonReportStore } from "./store.js";
 import {
   authUsers,
   marketSnapshots,
   monitorRuns,
+  reports,
   stripeWebhookEvents,
 } from "./schema.js";
 
@@ -36,6 +39,7 @@ describe("Neon product persistence", () => {
   let monitorRunId: string | null = null;
   let stripeEventId: string | null = null;
   let watchlistMarketId = "";
+  let comparisonReportSlug: string | null = null;
 
   beforeAll(async () => {
     await migrate(resources.database, { migrationsFolder: "./drizzle" });
@@ -92,6 +96,11 @@ describe("Neon product persistence", () => {
         await resources.database
           .delete(stripeWebhookEvents)
           .where(eq(stripeWebhookEvents.eventId, stripeEventId));
+      }
+      if (comparisonReportSlug) {
+        await resources.database
+          .delete(reports)
+          .where(eq(reports.slug, comparisonReportSlug));
       }
     } finally {
       await resources.close();
@@ -162,6 +171,43 @@ describe("Neon product persistence", () => {
 
     expect(unchangedId).toBe(firstId);
     expect(changedId).not.toBe(firstId);
+  });
+
+  it("reuses a comparison report by durable source key", async () => {
+    const fetchImplementation = createComparisonFetch();
+    const sourceKey = `integration-comparison-${crypto.randomUUID()}`;
+    const firstService = new ReportService({
+      config: loadConfig({ WEB_ORIGIN: "http://localhost:5173" }),
+      fetchImplementation,
+      store: new NeonReportStore(resources.database),
+    });
+    const urls = [
+      "https://kalshi.com/markets/kxtest/example?market_ticker=KXTEST-26",
+      "https://polymarket.com/event/example/example-happens",
+    ] as const;
+
+    const first = await firstService.getOrCreateComparisonReport(
+      sourceKey,
+      urls,
+    );
+    comparisonReportSlug = first.report.slug;
+    const requestsAfterFirstAnalysis = fetchImplementation.mock.calls.length;
+    const secondService = new ReportService({
+      config: loadConfig({ WEB_ORIGIN: "http://localhost:5173" }),
+      fetchImplementation,
+      store: new NeonReportStore(resources.database),
+    });
+    const second = await secondService.getOrCreateComparisonReport(
+      sourceKey,
+      urls,
+    );
+
+    expect(first.reused).toBe(false);
+    expect(second.reused).toBe(true);
+    expect(second.report.slug).toBe(first.report.slug);
+    expect(fetchImplementation).toHaveBeenCalledTimes(
+      requestsAfterFirstAnalysis,
+    );
   });
 
   it("deduplicates alerts and Stripe webhook claims", async () => {
@@ -326,3 +372,43 @@ describe("Neon product persistence", () => {
     }
   });
 });
+
+/**
+ * Creates deterministic public contract responses for durable report reuse.
+ *
+ * @returns Instrumented fetch implementation for one Kalshi/Polymarket pair.
+ */
+function createComparisonFetch(): ReturnType<typeof vi.fn<typeof fetch>> {
+  return vi.fn<typeof fetch>(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (
+      url === "https://external-api.kalshi.com/trade-api/v2/markets/KXTEST-26"
+    ) {
+      return Response.json({
+        market: {
+          close_time: "2026-12-31T22:00:00Z",
+          event_ticker: "KXTEST",
+          open_time: "2026-01-01T00:00:00Z",
+          rules_primary: "This market resolves Yes if the example happens.",
+          status: "open",
+          ticker: "KXTEST-26",
+          title: "Will the example happen?",
+        },
+      });
+    }
+    if (
+      url === "https://gamma-api.polymarket.com/markets/slug/example-happens"
+    ) {
+      return Response.json({
+        active: true,
+        closed: false,
+        description: "This market resolves Yes if the example happens.",
+        endDate: "2026-12-31T22:00:00Z",
+        id: "poly-test",
+        question: "Will the example happen?",
+        slug: "example-happens",
+      });
+    }
+    return new Response(null, { status: 404 });
+  });
+}
