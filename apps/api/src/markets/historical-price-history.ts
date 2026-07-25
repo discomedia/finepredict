@@ -36,6 +36,11 @@ const KalshiCandleSchema = z.object({
   price: z.object({
     close_dollars: z.union([z.number(), z.string()]).nullish(),
   }),
+  yes_ask: z
+    .object({
+      close_dollars: z.union([z.number(), z.string()]).nullish(),
+    })
+    .nullish(),
 });
 
 /** Kalshi batched candle response. */
@@ -248,11 +253,12 @@ export class HistoricalMarketPriceService {
       ),
     );
     const byTicker = new Map(
-      response.markets.map((market) => [
-        market.ticker,
+      response.markets.map((market, index) => [
+        market.ticker ?? markets[index]?.externalId,
         normalizePricePoints(
           market.candlesticks.map((candle) => ({
-            p: candle.price.close_dollars ?? "",
+            p:
+              candle.price.close_dollars ?? candle.yes_ask?.close_dollars ?? "",
             t: candle.end_period_ts,
           })),
         ),

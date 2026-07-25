@@ -7,8 +7,9 @@ import type {
   PortfolioCandidateLeg,
 } from "./types.js";
 
-const proofVersion = "portfolio-proof-v1";
+const proofVersion = "portfolio-proof-v2";
 const maximumCandidatesPerFamily = 2;
+const maximumOutcomePoolLegs = 24;
 
 /** Result of every deterministic portfolio detector over one catalog snapshot. */
 export interface PortfolioDetectionResult {
@@ -44,13 +45,21 @@ export function detectPortfolioCandidates(
   equivalentCandidates: readonly EquivalentContractCandidate[],
 ): PortfolioDetectionResult {
   const routed = detectRoutedMultiOutcomeCandidates(equivalentCandidates);
+  const venuePools = detectVenueMutuallyExclusiveCandidates(markets);
   const dominance = detectDominanceCandidates(markets);
   const compound = detectCompoundUpperBoundCandidates(markets);
-  const candidates = [...routed, ...dominance, ...compound];
+  const candidates = [
+    ...new Map(
+      [...routed, ...venuePools, ...dominance, ...compound].map((candidate) => [
+        candidate.opportunityId,
+        candidate,
+      ]),
+    ).values(),
+  ].sort(comparePreliminaryEdge);
   return {
     candidates,
     countsByStrategy: {
-      routed_multi_outcome: routed.length,
+      routed_multi_outcome: routed.length + venuePools.length,
       threshold_deadline_dominance: dominance.length,
       compound_upper_bound: compound.length,
     },
@@ -167,6 +176,80 @@ export function detectRoutedMultiOutcomeCandidates(
 }
 
 /**
+ * Builds Yes baskets from complete standard Polymarket outcome sets.
+ *
+ * @param markets - Shared current native catalog.
+ * @returns Highest-edge event pools using only provider-proven relationships.
+ */
+export function detectVenueMutuallyExclusiveCandidates(
+  markets: readonly NativeBinaryMarket[],
+): readonly PortfolioCandidate[] {
+  const families = groupBy(
+    markets.filter(isVenueProvenMutex),
+    (market) => `${market.venue}:${market.eventId}`,
+  );
+  const candidates: PortfolioCandidate[] = [];
+  for (const family of families.values()) {
+    const first = family[0];
+    if (!first) {
+      continue;
+    }
+    if (
+      family.length > maximumOutcomePoolLegs ||
+      family.some(
+        (market) =>
+          market.venue !== "polymarket" ||
+          market.negativeRisk !== true ||
+          market.negativeRiskAugmented !== false ||
+          market.eventOutcomeSetComplete !== true ||
+          market.catalogYesAskDollars === undefined,
+      )
+    ) {
+      continue;
+    }
+    const exhaustiveLegs = [...family]
+      .sort((left, right) =>
+        left.marketId.localeCompare(right.marketId, "en-US"),
+      )
+      .map((market) => ({
+        market,
+        side: "yes" as const,
+        outcomeKey: normalizeOutcomeKey(market.outcomeLabel ?? market.question),
+      }));
+    const exhaustiveEdgeDollarsPerShare =
+      1 - exhaustiveLegs.reduce((total, leg) => total + catalogAsk(leg), 0);
+    if (exhaustiveEdgeDollarsPerShare <= 0) {
+      continue;
+    }
+    candidates.push({
+      opportunityId: createPortfolioId(
+        "routed_multi_outcome",
+        "exhaustive_outcome_pool",
+        exhaustiveLegs,
+      ),
+      strategy: "routed_multi_outcome",
+      title: first.eventTitle ?? first.question,
+      category: first.category,
+      proofKind: "exhaustive_outcome_pool",
+      proofSummary: `Polymarket confirms this standard negative-risk event contains exactly these ${exhaustiveLegs.length} active outcomes, so buying Yes on every outcome pays exactly $1.00 per bundle.`,
+      proofVersion,
+      legs: exhaustiveLegs,
+      minimumPayoutDollarsPerShare: 1,
+      preliminaryGrossEdgeDollarsPerShare: exhaustiveEdgeDollarsPerShare,
+      relationship: "pure_arbitrage",
+      settlementRisks: [],
+      matchReasons: [
+        "Polymarket explicitly marks the parent event as standard negative risk.",
+        "The full provider event has no inactive or omitted child markets.",
+        "Augmented negative-risk events and hidden placeholders are excluded.",
+      ],
+      similarityPercent100: 100,
+    });
+  }
+  return candidates.sort(comparePreliminaryEdge).slice(0, 24);
+}
+
+/**
  * Finds same-event threshold and terminal-deadline implications.
  *
  * @param markets - Shared native catalog.
@@ -182,7 +265,7 @@ export function detectDominanceCandidates(
   const families = groupBy(
     parsed,
     ({ market, proposition }) =>
-      `${market.venue}:${market.eventId}:${proposition.kind}:${proposition.signature}:${proposition.largerIsStricter}`,
+      `${market.venue}:${proposition.kind}:${proposition.signature}:${proposition.largerIsStricter}`,
   );
   const candidates: PortfolioCandidate[] = [];
   for (const family of families.values()) {
@@ -254,7 +337,7 @@ export function detectDominanceCandidates(
         relationship: "pure_arbitrage",
         settlementRisks: [],
         matchReasons: [
-          "Same venue and parent event.",
+          "Same venue with archived rule text matching except for one monotone scalar.",
           "Archived rule skeletons differ only by a monotone threshold or terminal deadline.",
         ],
         similarityPercent100: 100,

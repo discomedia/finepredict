@@ -48,6 +48,15 @@ const feeScheduleSchema = z.object({
   exponent: z.coerce.number().nonnegative().default(1),
 });
 
+const polymarketEventSummarySchema = z.object({
+  id: z.string(),
+  slug: z.string(),
+  title: z.string().default(""),
+  negRisk: z.boolean().optional(),
+  enableNegRisk: z.boolean().optional(),
+  negRiskAugmented: z.boolean().optional(),
+});
+
 const polymarketMarketSchema = z.object({
   conditionId: z.string(),
   question: z.string(),
@@ -72,20 +81,33 @@ const polymarketMarketSchema = z.object({
   feeSchedule: feeScheduleSchema.optional(),
   negRisk: z.boolean().default(false),
   negRiskOther: z.boolean().default(false),
-  events: z
-    .array(
-      z.object({
-        slug: z.string(),
-        title: z.string().default(""),
-      }),
-    )
-    .default([]),
+  events: z.array(polymarketEventSummarySchema).default([]),
 });
 
 const polymarketKeysetPageSchema = z.object({
   markets: z.array(polymarketMarketSchema),
   next_cursor: z.string().default(""),
 });
+
+const polymarketEventDetailSchema = z.object({
+  id: z.string(),
+  negRisk: z.boolean().default(false),
+  enableNegRisk: z.boolean().default(false),
+  negRiskAugmented: z.boolean().default(false),
+  markets: z.array(
+    z.object({
+      conditionId: z.string(),
+      active: z.boolean(),
+      closed: z.boolean(),
+      acceptingOrders: z.boolean().default(false),
+      enableOrderBook: z.boolean().default(false),
+    }),
+  ),
+});
+
+const polymarketEventDetailsSchema = z.array(polymarketEventDetailSchema);
+const maximumPolymarketCompletenessChecks = 64;
+const maximumCompleteOutcomeLegs = 24;
 
 /** Options controlling a native public catalog refresh. */
 export interface NativeCatalogClientOptions {
@@ -149,11 +171,13 @@ export class NativeCatalogClient {
     const normalizedPolymarket = polymarketMarkets
       .map(normalizePolymarketMarket)
       .filter((market): market is NativeBinaryMarket => market !== undefined);
+    const completePolymarket =
+      await this.markCompletePolymarketOutcomeSets(normalizedPolymarket);
     return {
-      markets: [...normalizedKalshi, ...normalizedPolymarket],
+      markets: [...normalizedKalshi, ...completePolymarket],
       requestCount: this.requestCount,
       kalshiMarketCount: normalizedKalshi.length,
-      polymarketMarketCount: normalizedPolymarket.length,
+      polymarketMarketCount: completePolymarket.length,
     };
   }
 
@@ -249,6 +273,98 @@ export class NativeCatalogClient {
       }
       afterCursor = nextCursor;
     } while (true);
+  }
+
+  /**
+   * Verifies only catalog-positive standard outcome sets against full event
+   * membership in one shared Gamma request.
+   *
+   * @param markets - Current normalized Polymarket catalog.
+   * @returns Markets annotated when every provider child is currently tradable.
+   */
+  private async markCompletePolymarketOutcomeSets(
+    markets: readonly NativeBinaryMarket[],
+  ): Promise<readonly NativeBinaryMarket[]> {
+    const byProviderEventId = new Map<string, NativeBinaryMarket[]>();
+    for (const market of markets) {
+      if (
+        market.negativeRisk !== true ||
+        market.negativeRiskAugmented !== false ||
+        !market.providerEventId
+      ) {
+        continue;
+      }
+      const family = byProviderEventId.get(market.providerEventId) ?? [];
+      family.push(market);
+      byProviderEventId.set(market.providerEventId, family);
+    }
+    const candidateFamilies = [...byProviderEventId.entries()]
+      .flatMap(([providerEventId, family]) => {
+        if (
+          family.length < 2 ||
+          family.length > maximumCompleteOutcomeLegs ||
+          family.some((market) => market.catalogYesAskDollars === undefined)
+        ) {
+          return [];
+        }
+        const preliminaryEdgeDollarsPerShare =
+          1 -
+          family.reduce(
+            (total, market) =>
+              total + (market.catalogYesAskDollars ?? Infinity),
+            0,
+          );
+        return preliminaryEdgeDollarsPerShare > 0
+          ? [{ providerEventId, family, preliminaryEdgeDollarsPerShare }]
+          : [];
+      })
+      .sort(
+        (left, right) =>
+          right.preliminaryEdgeDollarsPerShare -
+          left.preliminaryEdgeDollarsPerShare,
+      )
+      .slice(0, maximumPolymarketCompletenessChecks);
+    if (candidateFamilies.length === 0) {
+      return markets;
+    }
+    const url = new URL("/events", this.polymarketGammaBaseUrl);
+    for (const candidate of candidateFamilies) {
+      url.searchParams.append("id", candidate.providerEventId);
+    }
+    const eventDetails = polymarketEventDetailsSchema.parse(
+      await this.getPolymarketJson(
+        url,
+        "Polymarket Gamma event completeness API",
+      ),
+    );
+    const completeEventIds = new Set<string>();
+    for (const event of eventDetails) {
+      const family = byProviderEventId.get(event.id);
+      if (
+        !family ||
+        (!event.negRisk && !event.enableNegRisk) ||
+        event.negRiskAugmented ||
+        event.markets.length !== family.length ||
+        event.markets.some(
+          (market) =>
+            !market.active ||
+            market.closed ||
+            !market.acceptingOrders ||
+            !market.enableOrderBook,
+        )
+      ) {
+        continue;
+      }
+      const catalogIds = new Set(family.map((market) => market.marketId));
+      if (event.markets.every((market) => catalogIds.has(market.conditionId))) {
+        completeEventIds.add(event.id);
+      }
+    }
+    return markets.map((market) =>
+      market.providerEventId && completeEventIds.has(market.providerEventId)
+        ? { ...market, eventOutcomeSetComplete: true }
+        : market,
+    );
   }
 
   /**
@@ -426,6 +542,7 @@ export function normalizePolymarketMarket(
     venue: "polymarket",
     marketId: market.conditionId,
     eventId: event?.slug ?? market.slug,
+    ...(event?.id ? { providerEventId: event.id } : {}),
     ...(event?.title ? { eventTitle: event.title } : {}),
     question: market.question,
     ...(market.groupItemTitle
@@ -450,6 +567,9 @@ export function normalizePolymarketMarket(
     liquidity: market.liquidityNum,
     ...(market.updatedAt ? { sourceUpdatedAtIso: market.updatedAt } : {}),
     ...(market.negRisk ? { negativeRisk: true } : {}),
+    ...(event?.negRiskAugmented !== undefined
+      ? { negativeRiskAugmented: event.negRiskAugmented }
+      : {}),
     ...(market.negRiskOther ? { negativeRiskOther: true } : {}),
   };
 }

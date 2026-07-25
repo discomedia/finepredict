@@ -8,6 +8,7 @@ import {
   detectCompoundUpperBoundCandidates,
   detectDominanceCandidates,
   detectRoutedMultiOutcomeCandidates,
+  detectVenueMutuallyExclusiveCandidates,
 } from "./portfolio-candidate-detectors.js";
 
 /**
@@ -127,6 +128,79 @@ describe("portfolio candidate detectors", () => {
     expect(reroutedCandidates[0]?.opportunityId).toBe(
       candidates[0]?.opportunityId,
     );
+  });
+
+  it("builds a Yes basket only from a verified standard complete outcome set", () => {
+    const markets = [
+      market({
+        venue: "polymarket",
+        marketId: "A",
+        eventId: "WINNER",
+        question: "Will A win?",
+        outcomeLabel: "A",
+        negativeRisk: true,
+        negativeRiskAugmented: false,
+        eventOutcomeSetComplete: true,
+        catalogYesAskDollars: 0.4,
+      }),
+      market({
+        venue: "polymarket",
+        marketId: "B",
+        eventId: "WINNER",
+        question: "Will B win?",
+        outcomeLabel: "B",
+        negativeRisk: true,
+        negativeRiskAugmented: false,
+        eventOutcomeSetComplete: true,
+        catalogYesAskDollars: 0.5,
+      }),
+    ];
+
+    const candidates = detectVenueMutuallyExclusiveCandidates(markets);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      strategy: "routed_multi_outcome",
+      proofKind: "exhaustive_outcome_pool",
+      minimumPayoutDollarsPerShare: 1,
+    });
+    expect(candidates[0]?.preliminaryGrossEdgeDollarsPerShare).toBeCloseTo(0.1);
+    expect(candidates[0]?.legs.every((leg) => leg.side === "yes")).toBe(true);
+    expect(
+      detectVenueMutuallyExclusiveCandidates(
+        markets.map((item) => ({
+          ...item,
+          negativeRiskAugmented: true,
+          eventOutcomeSetComplete: false,
+        })),
+      ),
+    ).toEqual([]);
+  });
+
+  it("proves monotone implications across provider event records", () => {
+    const rules = (value: number) =>
+      `If the close price is above ${value} USD, then the market resolves to Yes.`;
+    const candidates = detectDominanceCandidates([
+      market({
+        venue: "kalshi",
+        marketId: "HIGH",
+        eventId: "PRICE-HIGH",
+        question: "Will the close price be above 100 USD?",
+        description: rules(100),
+        catalogNoAskDollars: 0.2,
+      }),
+      market({
+        venue: "kalshi",
+        marketId: "LOW",
+        eventId: "PRICE-LOW",
+        question: "Will the close price be above 90 USD?",
+        description: rules(90),
+        catalogYesAskDollars: 0.7,
+      }),
+    ]);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.proofKind).toBe("threshold_implication");
   });
 
   it("finds only explicit compound rules containing a constituent verbatim", () => {

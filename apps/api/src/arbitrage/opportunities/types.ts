@@ -15,6 +15,7 @@ export type OpportunityStrategy =
 /** Deterministic proof attached to a guaranteed-payoff portfolio. */
 export type PortfolioProofKind =
   | "mutually_exclusive_pool"
+  | "exhaustive_outcome_pool"
   | "threshold_implication"
   | "deadline_implication"
   | "compound_implies_component";
@@ -39,6 +40,8 @@ export interface NativeBinaryMarket {
   readonly marketId: string;
   /** Venue-native parent event identifier. */
   readonly eventId: string;
+  /** Venue-native parent event record identifier when distinct from eventId. */
+  readonly providerEventId?: string;
   /** Human-readable parent event title used to disambiguate generic children. */
   readonly eventTitle?: string;
   /** Venue-native series identifier when the venue supplies one. */
@@ -87,8 +90,12 @@ export interface NativeBinaryMarket {
   readonly collateralReturnType?: string;
   /** Polymarket declares the parent event a negative-risk outcome set. */
   readonly negativeRisk?: boolean;
+  /** Polymarket declares the parent event an augmented negative-risk set. */
+  readonly negativeRiskAugmented?: boolean;
   /** Polymarket marks this as the augmented Other outcome. */
   readonly negativeRiskOther?: boolean;
+  /** Every child in the provider event is active and present in this catalog. */
+  readonly eventOutcomeSetComplete?: boolean;
 }
 
 /** One deterministic equivalent-contract candidate before direct-book evaluation. */

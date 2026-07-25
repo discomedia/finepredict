@@ -53,11 +53,11 @@ describe("HistoricalMarketPriceService", () => {
       return jsonResponse({
         markets: [
           {
-            ticker: "KX-1",
             candlesticks: [
               {
                 end_period_ts: 1_783_353_600,
-                price: { close_dollars: "0.51" },
+                price: {},
+                yes_ask: { close_dollars: "0.51" },
               },
             ],
           },
@@ -122,11 +122,11 @@ describe("HistoricalMarketPriceService", () => {
       return jsonResponse({
         markets: [
           {
-            ticker: "KX-1",
             candlesticks: [
               {
                 end_period_ts: 1_783_353_600,
-                price: { close_dollars: "0.51" },
+                price: {},
+                yes_ask: { close_dollars: "0.51" },
               },
             ],
           },

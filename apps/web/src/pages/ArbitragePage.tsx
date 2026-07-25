@@ -72,7 +72,7 @@ const strategyChoices: readonly {
   value: ArbitrageStrategy;
 }[] = [
   { label: "Equivalent contracts", value: "cross_venue_equivalent" },
-  { label: "Routed outcome pools", value: "routed_multi_outcome" },
+  { label: "Outcome pools", value: "routed_multi_outcome" },
   {
     label: "Threshold / deadline",
     value: "threshold_deadline_dominance",

@@ -141,7 +141,7 @@ describe("ArbitragePage", () => {
       screen.getByRole("combobox", { name: "Strategy" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("option", { name: "Routed outcome pools" }),
+      screen.getByRole("option", { name: "Outcome pools" }),
     ).toBeInTheDocument();
     expect(screen.getAllByText(/featured appearance differs/i)).toHaveLength(2);
     expect(screen.getAllByText(/Dec 31, 2026/)).toHaveLength(2);

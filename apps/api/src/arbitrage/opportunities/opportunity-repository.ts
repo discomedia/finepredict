@@ -749,6 +749,7 @@ function createStableMarketHash(market: NativeBinaryMarket): string {
       venue: market.venue,
       marketId: market.marketId,
       eventId: market.eventId,
+      providerEventId: market.providerEventId,
       eventTitle: market.eventTitle,
       seriesId: market.seriesId,
       question: market.question,
@@ -768,6 +769,7 @@ function createStableMarketHash(market: NativeBinaryMarket): string {
       eventMutuallyExclusive: market.eventMutuallyExclusive,
       collateralReturnType: market.collateralReturnType,
       negativeRisk: market.negativeRisk,
+      negativeRiskAugmented: market.negativeRiskAugmented,
       negativeRiskOther: market.negativeRiskOther,
     }),
   );
