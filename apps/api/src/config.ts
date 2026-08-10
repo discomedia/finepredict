@@ -102,7 +102,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       priceRefreshIntervalMs:
         parseNumberInRange(
           env.ARBITRAGE_PRICE_REFRESH_INTERVAL_SECONDS,
-          300,
+          3_600,
           10,
           86_400,
           "ARBITRAGE_PRICE_REFRESH_INTERVAL_SECONDS",

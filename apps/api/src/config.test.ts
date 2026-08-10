@@ -18,7 +18,7 @@ describe("FinePredict configuration", () => {
       enabled: true,
       runDiscoveryOnStart: true,
       discoveryIntervalMs: 3_600_000,
-      priceRefreshIntervalMs: 300_000,
+      priceRefreshIntervalMs: 3_600_000,
       maximumPriceRefreshPairs: 24,
       maximumFreshBookPairs: 100,
       minimumNetEdgeDollarsPerShare: 0.03,
